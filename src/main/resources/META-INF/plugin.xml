@@ -1,22 +1,27 @@
 <idea-plugin>
-    <id>org.example.YamlChecker</id>
-    <name>Plugin display name here</name>
-    <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
+    <id>edu.team449.YamlPlugin</id>
+    <name>YamlPlugin</name>
+    <vendor>The Blair Robot Project</vendor>
 
-    <description><![CDATA[
-    Enter short description for your plugin here.<br>
-    <em>most HTML tags may be used</em>
-    ]]></description>
+    <description>Checks YAML files for robot maps,
+        hopefully adds safety</description>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+    <depends>com.intellij.java</depends>
+    <depends>com.intellij.modules.java</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Add your extensions here -->
+
+        <psi.referenceContributor implementation="edu.team449.lang.MyYamlReferenceContributor"
+                                  language="YAML"/>
+        <lang.findUsagesProvider language="JAVA" implementationClass="edu.team449.lang.MyJavaFindUsagesProvider"/>
+
     </extensions>
 
     <actions>
-        <!-- Add your actions here -->
+
     </actions>
 </idea-plugin>
