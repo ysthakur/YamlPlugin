@@ -23,12 +23,15 @@ intellij {
     version '2019.3.2'
     plugins = ['java', 'yaml']
 }
+
 compileKotlin {
     kotlinOptions.jvmTarget = "11"
 }
+
 compileTestKotlin {
     kotlinOptions.jvmTarget = "11"
 }
+
 patchPluginXml {
 
 }
