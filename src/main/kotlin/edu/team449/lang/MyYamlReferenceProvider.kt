@@ -7,8 +7,14 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.ProcessingContext
 import org.jetbrains.yaml.psi.YAMLKeyValue
 
+/**
+ * Returns references
+ * TODO make a reference type for objects referred to using the '@id' property
+ */
 object MyYamlReferenceProvider : PsiReferenceProvider() {
-    val classNameRegex = Regex("""([A-Z_][A-Z_0-9]*\.)+[A-Z_][A-Z_0-9]*""")
+    val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
+    val classNameDotRegex = Regex("$classNameRegexStr\\.")
+    val classNameRegex = Regex(classNameRegexStr)
     override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<PsiReference> {
         //todo implement this
         //Logger.getInstance(this::class.java).warn("Got to getReferencesByElement")

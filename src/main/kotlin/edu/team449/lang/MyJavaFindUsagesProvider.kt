@@ -6,6 +6,7 @@ import com.intellij.psi.PsiElement
 
 /**
  * TODO actually implement this
+ * TODO apparently it's unnecessary
  */
 class MyJavaFindUsagesProvider : FindUsagesProvider {
 

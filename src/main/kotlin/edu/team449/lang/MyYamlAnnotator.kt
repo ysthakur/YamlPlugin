@@ -2,7 +2,6 @@ package edu.team449.lang
 
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.PsiElement
 import org.jetbrains.yaml.psi.YAMLKeyValue
 
@@ -14,15 +13,19 @@ class MyYamlAnnotator : Annotator {
             //holder.createWeakWarningAnnotation(element, "Not YAMLKeyValue")
             return
         }
-        if (!element.key!!.text.matches(MyYamlReferenceProvider.classNameRegex)) {
+        if (!(element.key ?: return).text.matches(MyYamlReferenceProvider.classNameRegex)) {
             //holder.createWarningAnnotation(element, "Not class reference")
             return
         }
         val ref = YamlJavaClassReference(element).resolve()
         if (ref == null) {
-            holder.createErrorAnnotation(element, "Null")
-        } else {
-            holder.createInfoAnnotation(element, "Resolved to $ref")
+            holder.createErrorAnnotation(element.key!!,
+                if (resolveToPackage(element.key!!.text, element.project) != null)
+                    "${element.key!!.text} is a package, not a class"
+                else
+                    "Could not resolve reference to ${element.key!!.text}")
         }
+        //todo add support for jsoncreators and check if all constructor parameters have been
+        // passed and that the types are correct
     }
 }
