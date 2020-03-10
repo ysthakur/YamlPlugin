@@ -18,7 +18,7 @@ class YamlGoToSymbolContributor : ChooseByNameContributor {
     ): Array<NavigationItem> {
         Logger.getInstance(this::class.java).warn("Entered getItemsByName in gotosymbol")
         if (name == null || project == null) return emptyArray()
-        if (name.matches(MyYamlReferenceProvider.classNameRegex)) {
+        if (name.matches(classNameRegex)) {
             val sourceRoots = ProjectRootManager.getInstance(project).contentSourceRoots
             if (sourceRoots.isEmpty()) return emptyArray()
             val javaVirtDir = sourceRoots.find { file -> file.name == "java" }

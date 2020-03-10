@@ -10,13 +10,10 @@ sealed class JavaClassOrPackage<out T : PsiElement>(val held: T) : PsiElement {
 }
 
 class JavaClass(val jClass: PsiClass) : JavaClassOrPackage<PsiClass>(jClass), PsiClass by jClass {
+
     override fun getSourceElement(): PsiElement? {
         return super.getSourceElement()
     }
-
-    /*override fun getQualifiedName(): String {
-        return jClass.qualifiedName!!
-    }*/
 
     override val children: Iterable<JavaClassOrPackage<*>>
         get() = jClass.allInnerClasses.map(::JavaClass)

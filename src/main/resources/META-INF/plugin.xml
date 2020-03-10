@@ -18,11 +18,11 @@
 
         <psi.referenceContributor implementation="edu.team449.lang.MyYamlReferenceContributor"
                                   language=""/>
-        <lang.findUsagesProvider language="JAVA" implementationClass="edu.team449.lang.MyJavaFindUsagesProvider"/>
+        <!--lang.findUsagesProvider language="JAVA" implementationClass="edu.team449.lang.MyJavaFindUsagesProvider"/-->
         <annotator implementationClass="edu.team449.lang.MyYamlAnnotator" language=""/>
         <!--externalAnnotator implementationClass="edu.team449.lang.YamlExternalAnnotator"
                 language=""/-->
-        <gotoSymbolContributor implementation="edu.team449.lang.YamlGoToSymbolContributor"/>
+        <!--gotoSymbolContributor implementation="edu.team449.lang.YamlGoToSymbolContributor"/-->
         <completion.contributor implementationClass="edu.team449.lang.YamlCompletionContributor"
                                 language="any"/>
 

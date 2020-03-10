@@ -7,7 +7,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import org.jetbrains.yaml.psi.YAMLKeyValue
 
-class YamlExternalAnnotator : ExternalAnnotator<YAMLKeyValue, YamlJavaClassReference>() {
+class YamlExternalAnnotator : ExternalAnnotator<YAMLKeyValue, YamlJavaClassOrConstructorReference>() {
 
     override fun collectInformation(file: PsiFile): YAMLKeyValue? {
         for (element in file.children) {
@@ -19,11 +19,11 @@ class YamlExternalAnnotator : ExternalAnnotator<YAMLKeyValue, YamlJavaClassRefer
         return null
     }
 
-    override fun doAnnotate(collectedInfo: YAMLKeyValue): YamlJavaClassReference? {
-        return YamlJavaClassReference(collectedInfo)
+    override fun doAnnotate(collectedInfo: YAMLKeyValue): YamlJavaClassOrConstructorReference? {
+        return YamlJavaClassOrConstructorReference(collectedInfo)
     }
 
-    override fun apply(file: PsiFile, annotationResult: YamlJavaClassReference?, holder: AnnotationHolder) {
+    override fun apply(file: PsiFile, annotationResult: YamlJavaClassOrConstructorReference?, holder: AnnotationHolder) {
         if (annotationResult != null)
             holder.createErrorAnnotation(annotationResult.element, "Something")
         else {
