@@ -17,6 +17,8 @@ object MyYamlReferenceProvider : PsiReferenceProvider() {
             is YAMLKeyValue -> {
                 if (isConstructorCall(element)) {
                     return arrayOf(YamlJavaClassOrConstructorReference(element))
+                } else {
+                    return arrayOf(YamlJavaParameterReference(element))
                 }
             }
             else -> {

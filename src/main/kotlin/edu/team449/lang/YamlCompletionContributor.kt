@@ -12,7 +12,6 @@ import org.jetbrains.yaml.YAMLLanguage
 import org.jetbrains.yaml.YAMLTokenTypes
 import org.jetbrains.yaml.psi.YAMLKeyValue
 
-
 class YamlCompletionContributor : CompletionContributor() {
 
     val LOG = Logger.getInstance(javaClass)
@@ -51,8 +50,9 @@ class YamlCompletionContributor : CompletionContributor() {
                         //addElems(allChildrenNames(pkg.parentPackage ?: return))
                     } else {
                         val constructorCall = element.parent.parent.parent
-                        if (constructorCall is YAMLKeyValue && isConstructorCall(constructorCall)) {
-                            val constr = resolveToConstructor(constructorCall) ?: return
+                        val cls = if (constructorCall is YAMLKeyValue) typeOf(constructorCall) else null
+                        if (cls != null) {
+                            val constr = findJsonCreator(cls) ?: return
                             addElems(constr.parameterList.parameters.map(PsiParameter::getName))
                         }
                     }

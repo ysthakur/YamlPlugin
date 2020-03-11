@@ -4,7 +4,7 @@ plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.3.61'
 }
 
-group 'edu.team449'
+group 'com.team449'
 version '1.0-SNAPSHOT'
 
 sourceCompatibility = 11

@@ -28,7 +28,7 @@ class MyYamlAnnotator : Annotator {
                     "Could not find ${element.key!!.text}"
             )
         } else {
-            val constructor = resolveToConstructor(cls)
+            val constructor = findJsonCreator(cls)
             if (constructor == null) {
                 holder.createErrorAnnotation(element.key!!, "Could not find a constructor for class ${cls.name}")
                 return
@@ -38,7 +38,7 @@ class MyYamlAnnotator : Annotator {
                 annot.text.matches(Regex("""@JsonIdentityInfo\(.*"""))
             }
             var id: String? = if (idAnnotation != null) {
-                idAnnotation.findAttributeValue("property")?.text?.removeSurrounding("\"") ?: "@id"
+                idAnnotation.findAttributeValue("property")?.text?.withoutQuotes() ?: "@id"
             } else {
                 null
             }
