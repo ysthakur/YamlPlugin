@@ -5,11 +5,14 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTypesUtil
+import org.jetbrains.yaml.psi.YAMLAlias
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.YAMLMapping
 import org.jetbrains.yaml.psi.YAMLValue
+import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
+import org.jetbrains.yaml.resolve.YAMLAliasReference
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
@@ -18,6 +21,20 @@ val classNameDotRegex = Regex("$classNameRegexStr\\.")
 val classNameRegex = Regex(classNameRegexStr)
 val robotPkgName = "org.usfirst.frc.team449.robot"
 val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
+
+fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? {
+    val file = idRef.containingFile
+    return findElementLinearly(file) { elem ->
+        val cls = elem.javaClass
+        val text = elem.text
+        if (elem.parent !is YAMLKeyValue || elem !is YAMLMappingImpl || elem !is YAMLKeyValue) {
+            false
+        } else {
+            //Logger.getInstance(MyYamlAnnotator::class.java).warn("Value is ${elem.valueText}")
+            elem.valueText == idRef.text
+        }
+    } as YAMLKeyValue?
+}
 
 fun resolveToObjectDef(idArg: YAMLPlainTextImpl): YAMLKeyValue? {
     val file = idArg.containingFile
@@ -96,6 +113,10 @@ fun resolveToConstructor(constructorCall: YAMLKeyValue): PsiMethod? {
 }
 
 fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
+    if (arg.key is YAMLAliasImpl)
+        return resolveToParameter(
+            (YAMLAliasReference(arg.key as YAMLAliasImpl).resolve()?.markedValue ?: return null) as YAMLKeyValue
+        )
     val cls = typeOf(getUpperConstructor(arg)) ?: resolveToClass(ROBOT_MAP_QUALIFIED_NAME, arg.project) ?: return null
     return findJsonCreator(cls)?.findParam(arg.keyText)
 }

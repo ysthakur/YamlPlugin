@@ -11,5 +11,5 @@ import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
  * A reference using the id property
  */
 class IdReference(idArg: YAMLPlainTextImpl) : PsiReferenceBase<YAMLPlainTextImpl>(idArg) {
-    override fun resolve() = resolveToObjectDef(element)
+    override fun resolve() = resolveToIdDecl(element)
 }

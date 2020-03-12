@@ -4,7 +4,7 @@ plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.3.61'
 }
 
-group 'com.team449'
+group 'edu.team449'
 version '1.0-SNAPSHOT'
 
 sourceCompatibility = 11
@@ -20,7 +20,7 @@ dependencies {
 
 // See https://github.com/JetBrains/gradle-intellij-plugin/
 intellij {
-    version '2019.3.2'
+    version '2019.3.3'
     plugins = ['java', 'yaml']
 }
 
