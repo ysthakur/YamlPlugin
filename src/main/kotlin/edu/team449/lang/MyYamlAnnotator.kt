@@ -4,7 +4,7 @@ import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.psi.PsiElement
 import org.jetbrains.yaml.psi.YAMLKeyValue
-import org.jetbrains.yaml.psi.impl.YAMLBlockMappingImpl
+import org.jetbrains.yaml.psi.impl.YAMLMappingImpl
 
 class MyYamlAnnotator : Annotator {
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
@@ -34,16 +34,9 @@ class MyYamlAnnotator : Annotator {
                 return
             }
             val params = constructor.parameterList.parameters.toMutableSet()
-            val idAnnotation = cls.annotations.find { annot ->
-                annot.text.matches(Regex("""@JsonIdentityInfo\(.*"""))
-            }
-            var id: String? = if (idAnnotation != null) {
-                idAnnotation.findAttributeValue("property")?.text?.withoutQuotes() ?: "@id"
-            } else {
-                null
-            }
-            val args = element.value!! as YAMLBlockMappingImpl
-            for (arg in args.keyValues) {
+            var id: String? = getIdName(cls)
+            //val args = element.value!! as YAMLMappingImpl
+            for (arg in getAllArgs(element)) {
                 val keyText = arg.keyText.removeSurrounding("\"")
                 val param = params.find { p -> p.name == keyText }
                 if (param == null) {
@@ -58,13 +51,13 @@ class MyYamlAnnotator : Annotator {
             }
             for (param in params) {
                 //Check that all the parameters have been entered in
-                if (param.annotations.find { a -> a.qualifiedName?.contains("NotNull") == true } != null) {
+                if (param.annotations.find { a -> a.qualifiedName?.contains(Regex("""@JsonProperty\(.*required( )?=( )?true""")) == true } != null) {
                     //Means it is annotated @NotNull
-                    holder.createErrorAnnotation(element.key!!, "No argument given for NotNull property ${param.name}")
+                    holder.createErrorAnnotation(element.key!!, "No argument given for required property ${param.name}")
                 }
             }
             if (id != null) {
-                holder.createErrorAnnotation(element.key!!, "Property $id not given")
+                holder.createErrorAnnotation(element.key!!, "ID property $id not given")
             }
             //holder.createInfoAnnotation(element.value!!, "Type is " + element.value!!.javaClass)
         }

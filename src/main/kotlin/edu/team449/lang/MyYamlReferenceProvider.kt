@@ -4,6 +4,8 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.*
 import com.intellij.util.ProcessingContext
 import org.jetbrains.yaml.psi.YAMLKeyValue
+import org.jetbrains.yaml.psi.YAMLValue
+import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 
 /**
  * Returns references
@@ -13,21 +15,22 @@ object MyYamlReferenceProvider : PsiReferenceProvider() {
     override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<PsiReference> {
         //todo implement this
         //Logger.getInstance(this::class.java).warn("Got to getReferencesByElement")
-        when (element) {
+        return when (element) {
             is YAMLKeyValue -> {
                 if (isConstructorCall(element)) {
-                    return arrayOf(YamlJavaClassOrConstructorReference(element))
+                    arrayOf<PsiReference>(YamlJavaClassOrConstructorReference(element))
                 } else {
-                    return arrayOf(YamlJavaParameterReference(element))
+                    arrayOf<PsiReference>(YamlJavaParameterReference(element))
                 }
             }
+            is YAMLPlainTextImpl -> {
+                arrayOf<PsiReference>(IdReference(element))
+            }
             else -> {
-                if (element.text.contains(classNameRegex))
-                    Logger.getInstance(this.javaClass)
-                        .warn("Could not find element of type $element with text ${element.text}")
+                emptyArray()
             }
         }
 
-        return emptyArray()
+        //return emptyArray()
     }
 }

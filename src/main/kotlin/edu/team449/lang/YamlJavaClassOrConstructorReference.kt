@@ -9,7 +9,7 @@ import org.jetbrains.yaml.psi.YAMLKeyValue
 class YamlJavaClassOrConstructorReference(constructorCall: YAMLKeyValue) :
     PsiPolyVariantReferenceBase<YAMLKeyValue>(constructorCall) {
 
-    override fun resolve() = resolveToClass(element)
+    override fun resolve() = resolveToConstructor(element)
     override fun multiResolve(incompleteCode: Boolean): Array<ResolveResult> {
         var size = 2
         val cls: PsiElement? = resolveToClass(element) ?: run { size--; null }
