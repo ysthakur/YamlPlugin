@@ -1,11 +1,17 @@
 package edu.team449.lang
 
-import com.intellij.codeInsight.completion.*
-import com.intellij.codeInsight.completion.CompletionType.*
+import com.intellij.codeInsight.completion.CompletionContributor
+import com.intellij.codeInsight.completion.CompletionParameters
+import com.intellij.codeInsight.completion.CompletionProvider
+import com.intellij.codeInsight.completion.CompletionResultSet
+import com.intellij.codeInsight.completion.CompletionType.BASIC
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.patterns.PlatformPatterns
-import com.intellij.psi.*
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiPackage
+import com.intellij.psi.PsiParameter
 import com.intellij.util.ProcessingContext
 import org.jetbrains.annotations.NotNull
 import org.jetbrains.yaml.YAMLLanguage
@@ -52,7 +58,7 @@ class YamlCompletionContributor : CompletionContributor() {
                         val constructorCall = element.parent.parent.parent
                         val cls = if (constructorCall is YAMLKeyValue) typeOf(constructorCall) else null
                         if (cls != null) {
-                            val constr = findJsonCreator(cls) ?: return
+                            val constr = resolveToConstructor(cls) ?: return
                             addElems(constr.parameterList.parameters.map(PsiParameter::getName))
                         }
                     }
@@ -60,6 +66,7 @@ class YamlCompletionContributor : CompletionContributor() {
             }
         )
     }
+
     /**
      * Return a list of all the classes and packages inside
      * a certain package
@@ -70,8 +77,8 @@ class YamlCompletionContributor : CompletionContributor() {
         return res
     }
 
-    fun allChildrenNames(pkg: PsiPackage): Iterable<String> = allChildren(pkg).map {
-        elem -> when (elem) {
+    fun allChildrenNames(pkg: PsiPackage): Iterable<String> = allChildren(pkg).map { elem ->
+        when (elem) {
             is PsiClass -> elem.qualifiedName ?: throw Error("It's an anonymous or local class! Aaahhh!")
             is PsiPackage -> elem.qualifiedName
             else -> throw Error("Not a class or package! Oh no!")

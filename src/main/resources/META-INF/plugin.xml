@@ -13,13 +13,14 @@
     <depends>com.intellij.java</depends>
     <depends>com.intellij.modules.java</depends>
     <depends>org.jetbrains.plugins.yaml</depends>
+    <!--depends>org.jetbrains.plugins.gradle</depends-->
 
     <extensions defaultExtensionNs="com.intellij">
 
         <psi.referenceContributor implementation="edu.team449.lang.MyYamlReferenceContributor"
                                   language=""/>
         <!--lang.findUsagesProvider language="JAVA" implementationClass="edu.team449.lang.MyJavaFindUsagesProvider"/-->
-        <annotator implementationClass="edu.team449.lang.MyYamlAnnotator" language=""/>
+        <annotator implementationClass="edu.team449.lang.YamlAnnotator" language=""/>
         <!--externalAnnotator implementationClass="edu.team449.lang.YamlExternalAnnotator"
                 language=""/-->
         <!--gotoSymbolContributor implementation="edu.team449.lang.YamlGoToSymbolContributor"/-->

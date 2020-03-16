@@ -5,10 +5,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTypesUtil
-import org.jetbrains.yaml.psi.YAMLAlias
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.YAMLMapping
-import org.jetbrains.yaml.psi.YAMLValue
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
@@ -21,12 +19,14 @@ val classNameDotRegex = Regex("$classNameRegexStr\\.")
 val classNameRegex = Regex(classNameRegexStr)
 val robotPkgName = "org.usfirst.frc.team449.robot"
 val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
+//var ROBOT_CLASS_CACHED: PsiClass? = null
+fun Project.robotClass() = resolveToClass(ROBOT_MAP_QUALIFIED_NAME, this)
 
 fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? {
     val file = idRef.containingFile
     return findElementLinearly(file) { elem ->
-        val cls = elem.javaClass
-        val text = elem.text
+        //val cls = elem.javaClass
+        //val text = elem.text
         if (elem.parent !is YAMLKeyValue || elem !is YAMLMappingImpl || elem !is YAMLKeyValue) {
             false
         } else {
@@ -36,19 +36,28 @@ fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? {
     } as YAMLKeyValue?
 }
 
-fun resolveToObjectDef(idArg: YAMLPlainTextImpl): YAMLKeyValue? {
+/**
+ * Resolves a plaintext value to an object of that id, and also gives
+ * whether or not it is a forward reference
+ *
+ * @return The object/constructor call this refers to (null if not found)
+ *         and a boolean (true if it is a forward reference, false otherwise)
+ */
+fun resolveToObjectDef(idArg: YAMLPlainTextImpl): Pair<YAMLKeyValue?, Boolean> {
     val file = idArg.containingFile
+    var forwardRef = false
     return findElementLinearly(file) { elem ->
-        val cls = elem.javaClass
-        val text = elem.text
+        //val cls = elem.javaClass
+        //val text = elem.text
+        if (elem == idArg) forwardRef = true
         if (elem !is YAMLKeyValue || elem.value !is YAMLMappingImpl) {
             false
         } else {
             val otherId = getIdArg(elem) ?: return@findElementLinearly false
-            Logger.getInstance(MyYamlAnnotator::class.java).warn("Value is ${otherId.valueText}")
+            //Logger.getInstance(MyYamlAnnotator::class.java).warn("Value is ${otherId.valueText}")
             otherId.valueText == idArg.text
         }
-    } as YAMLKeyValue?
+    } as YAMLKeyValue? to forwardRef
 }
 
 fun getIdArg(constructorCall: YAMLKeyValue): YAMLKeyValue? {
@@ -76,6 +85,9 @@ fun findElementLinearly(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiE
     return null
 }
 
+/**
+ * This apparently doesn't work because it's in a different thread
+ */
 fun findElement(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? {
     val childThreads = AtomicReference<MutableSet<Thread>>(mutableSetOf())
     val mainRes = AtomicReference<PsiElement?>()
@@ -99,35 +111,43 @@ fun findElement(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? 
 
 /**
  * Find the class whose constructor/JsonCreator is being called
- * TODO make a separate method for constructor invocations
  */
 fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
     resolveToClass(constructorCall.keyText, constructorCall.project)
-
-/**
- * Find a constructor for a class (assuming there's only one annotated
- * JsonCreator)
- */
-fun resolveToConstructor(constructorCall: YAMLKeyValue): PsiMethod? {
-    return findJsonCreator(resolveToClass(constructorCall) ?: return null)
-}
 
 fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
     if (arg.key is YAMLAliasImpl)
         return resolveToParameter(
             (YAMLAliasReference(arg.key as YAMLAliasImpl).resolve()?.markedValue ?: return null) as YAMLKeyValue
         )
-    val cls = typeOf(getUpperConstructor(arg)) ?: resolveToClass(ROBOT_MAP_QUALIFIED_NAME, arg.project) ?: return null
-    return findJsonCreator(cls)?.findParam(arg.keyText)
+    val upperConst = getUpperConstructor(arg)
+    val cls = if (upperConst == null) {
+        arg.project.robotClass()
+    } else {
+        typeOf(upperConst)
+    } ?: return null
+    return resolveToConstructor(cls)?.findParam(arg.keyText)
+}
+
+/**
+ * Find ALL the constructors in the given class usable by
+ * YAML files (whether they're actual constructors or methods
+ * annotated with `JsonCreator`)
+ */
+fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> {
+    val needsJsonAnnot = needsJsonAnnot(cls)
+    val pred =
+        { method: PsiMethod -> if (needsJsonAnnot) hasAnnotation(method, "JsonCreator") else method.isConstructor }
+    return cls.methods.filter(pred)
 }
 
 /**
  * Find a constructor in the class by the name `className`, assuming there's
- * only one constructor used by Jackson
+ * only one constructor used
  */
-fun findJsonCreator(cls: PsiClass): PsiMethod? {
-    val pred = { method: PsiMethod -> hasAnnotation(method, "JsonCreator") }
-    return cls.constructors.find(pred) ?: cls.methods.find(pred)
+fun resolveToConstructor(cls: PsiClass): PsiMethod? {
+    val cs = allYAMLConstructors(cls)
+    return if (cs.isEmpty()) null else cs[0]
 }
 
 /**
@@ -156,12 +176,15 @@ fun resolveToClass(className: String, project: Project): PsiClass? =
 
 /**
  * Get the name of the property representing the
- * id for this class ("@id" by default)
+ * id for this class ("@id" by default) if there
+ * is a JsonIdentityInfo annotation
  */
 fun getIdName(cls: PsiClass): String? {
-    return (cls.annotations.find { annot ->
-        annot.text.matches(Regex("""@JsonIdentityInfo\(.*"""))
-    } ?: return null).findAttributeValue("property")?.text?.withoutQuotes() ?: "@id"
+    return if (!needsIdAnnotation(cls)) defaultId
+           else (cls.annotations.find { annot ->
+               annot.text.matches(Regex("""@JsonIdentityInfo\(.*""")) } ?: return null)
+           .findAttributeValue("property")?.text?.withoutQuotes()
+           ?: defaultId
 }
 
 /**
