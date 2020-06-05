@@ -1,10 +1,10 @@
 <idea-plugin>
     <id>edu.team449.YamlPlugin</id>
-    <name>YamlPlugin</name>
+    <name>Robot Map Helper</name>
     <vendor>The Blair Robot Project</vendor>
 
-    <description>Checks YAML files for robot maps,
-        hopefully adds safety</description>
+    <description>Checks YAML files for robot maps. Does a bit of code completion,
+        reference resolving/find usages, and checking parameters. Working on type checking</description>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->
@@ -17,14 +17,14 @@
 
     <extensions defaultExtensionNs="com.intellij">
 
-        <psi.referenceContributor implementation="edu.team449.lang.MyYamlReferenceContributor"
+        <psi.referenceContributor implementation="edu.team449.MyYamlReferenceContributor"
                                   language=""/>
         <!--lang.findUsagesProvider language="JAVA" implementationClass="edu.team449.lang.MyJavaFindUsagesProvider"/-->
-        <annotator implementationClass="edu.team449.lang.YamlAnnotator" language=""/>
+        <annotator implementationClass="edu.team449.YamlAnnotator" language=""/>
         <!--externalAnnotator implementationClass="edu.team449.lang.YamlExternalAnnotator"
                 language=""/-->
         <!--gotoSymbolContributor implementation="edu.team449.lang.YamlGoToSymbolContributor"/-->
-        <completion.contributor implementationClass="edu.team449.lang.YamlCompletionContributor"
+        <completion.contributor implementationClass="edu.team449.YamlCompletionContributor"
                                 language="any"/>
 
     </extensions>
