@@ -26,6 +26,7 @@
         <!--gotoSymbolContributor implementation="edu.team449.lang.YamlGoToSymbolContributor"/-->
         <completion.contributor implementationClass="edu.team449.YamlCompletionContributor"
                                 language="any"/>
+        <documentationProvider implementation="edu.team449.ClassDocumentationProvider"/>
 
     </extensions>
 

@@ -1,5 +1,6 @@
 package edu.team449
 
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
@@ -12,6 +13,8 @@ import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 import org.jetbrains.yaml.resolve.YAMLAliasReference
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.contract
 
 val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
 val classNameDotRegex = Regex("$classNameRegexStr\\.")
@@ -19,10 +22,24 @@ val classNameRegex = Regex(classNameRegexStr)
 val robotPkgName = "org.usfirst.frc.team449.robot"
 val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
 
+val LOG = Logger.getInstance(object {}.javaClass)
+
 //var ROBOT_CLASS_CACHED: PsiClass? = null
 
 fun Project.robotClass() =
   resolveToClass(ROBOT_MAP_QUALIFIED_NAME, this)
+
+/**
+ * Resolve reference to a single element
+ */
+fun resolveRef(element: PsiElement?): PsiElement? {
+  return when (element) {
+    null -> null
+    is YAMLPlainTextImpl -> resolveToIdDecl(element) ?: resolveRef(resolveToObjectDef(element).first)
+    is YAMLKeyValue -> resolveToClass(element) ?: resolveToParameter(element)
+    else -> element
+  }
+}
 
 fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? {
   val file = idRef.containingFile
@@ -76,6 +93,9 @@ fun findIdArg(args: Iterable<YAMLKeyValue>, cls: PsiClass): YAMLKeyValue? {
   return args.find { keyVal -> keyVal.keyText.withoutQuotes() == getIdName(cls) ?: return null }
 }
 
+fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
+  arg.keyText.withoutQuotes() == idName
+
 fun findArg(constructorCall: YAMLKeyValue, argName: String) =
   getAllArgs(constructorCall).find { keyVal -> keyVal.keyText.withoutQuotes() == argName }
 
@@ -126,10 +146,15 @@ fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
   resolveToClass(constructorCall.keyText, constructorCall.project)
 
 fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
-  if (arg.key is YAMLAliasImpl)
-    return resolveToParameter(
-      (YAMLAliasReference(arg.key as YAMLAliasImpl).resolve()?.markedValue ?: return null) as YAMLKeyValue
-    )
+  if (arg.key is YAMLAliasImpl) {
+    val anchoredValue = anchorIfAliasNullIfWrongTypeElseSame<YAMLKeyValue>(arg.key as YAMLAliasImpl)
+    anchoredValue?.let {
+      val param = resolveToParameter(anchoredValue)
+      param?.let { return@resolveToParameter param }
+      LOG.debug("${arg.key} cannot be resolved to a parameter")
+    }
+    if (anchoredValue == null) LOG.debug("anchoredValue is null?")
+  }
   val upperConst = getUpperConstructor(arg)
   val cls = if (upperConst == null) {
     arg.project.robotClass()
@@ -223,9 +248,8 @@ fun resolveToClass(className: String, project: Project): PsiClass? =
  * is a JsonIdentityInfo annotation
  */
 fun getIdName(cls: PsiClass): String? {
-  return if (!needsIdAnnotation(cls)) DEFAULT_ID
-  else (cls.annotations.find { annot ->
-    annot.text.matches(Regex("""@JsonIdentityInfo\(.*"""))
+  return (cls.annotations.find { annot ->
+    annot.qualifiedName?.endsWith("JsonIdentityInfo") ?: false
   } ?: return null)
     .findAttributeValue("property")?.text?.withoutQuotes()
     ?: DEFAULT_ID

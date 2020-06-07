@@ -73,7 +73,7 @@ class YamlCompletionContributor : CompletionContributor() {
    * Return a list of all the classes and packages inside
    * a certain package
    */
-  fun allChildren(pkg: PsiPackage): Iterable<PsiElement> {
+  private fun allChildren(pkg: PsiPackage): Iterable<PsiElement> {
     val res = mutableListOf<PsiElement>(*pkg.subPackages)
     res.addAll(pkg.classes)
     return res

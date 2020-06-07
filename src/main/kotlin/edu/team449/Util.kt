@@ -1,8 +1,10 @@
 package edu.team449
 
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiParameter
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.YAMLMapping
 import org.jetbrains.yaml.psi.YAMLPsiElement
@@ -12,23 +14,22 @@ import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 import org.jetbrains.yaml.resolve.YAMLAliasReference
 
 /**
- * This is some random placeholder that someone at Jetbrains
- * put in
+ * This is some random placeholder that someone at Jetbrains put in
  */
-val ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS = "IntellijIdeaRulezzz"
-val DEFAULT_ID = "@id"
-val LIST_CLASS_SIMPLE_NAME = "List"
-val VALID_IDENTIFIER_REGEX_STR = """[A-Za-z_$][A-Za-z0-9_${'$'}]*"""
+const val ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS = "IntellijIdeaRulezzz"
+const val DEFAULT_ID = "@id"
+const val LIST_CLASS_SIMPLE_NAME = "List"
+const val VALID_IDENTIFIER_REGEX_STR = """[A-Za-z_$][A-Za-z0-9_${'$'}]*"""
 val TYPE_ACCEPTING_SINGLE_TYPE_PARAMETER_REGEX =
   Regex("$VALID_IDENTIFIER_REGEX_STR(\\W*\\.\\W*$VALID_IDENTIFIER_REGEX_STR)*\\W*<\\W*$VALID_IDENTIFIER_REGEX_STR\\W*>")
 
-typealias ArgKey = Pair<String, YAMLPsiElement>
-typealias ArgumentList = Map<ArgKey, YAMLValue>
+//typealias ArgKey = Pair<String, YAMLPsiElement>
+//typealias ArgumentList = Map<ArgKey, YAMLValue>
 
-val ArgKey.argName
-  get() = this.first
-val ArgKey.elem
-  get() = this.second
+//val ArgKey.argName
+//  get() = this.first
+//val ArgKey.elem
+//  get() = this.second
 
 fun String.withoutQuotes() = this.removeSurrounding("\"")
 
@@ -53,7 +54,9 @@ fun extractTypeArgument(typeText: String) = typeText.substringAfter('<').removeS
 /**
  * Whether or not it's a list
  */
-fun PsiClass.isCollectionClass() = this.name?.startsWith(LIST_CLASS_SIMPLE_NAME) ?: false
+fun PsiClass.isCollectionClass(): Boolean =
+  TODO("Figure out how collections work")
+  //this.name?.startsWith(LIST_CLASS_SIMPLE_NAME) ?: false
 
 fun isCollectionClass(className: String) = className.contains(LIST_CLASS_SIMPLE_NAME)
 
@@ -81,16 +84,28 @@ fun needsJsonAnnot(cls: PsiClass): Boolean {
  * Whether or not it needs a `JsonIdentityInfo` annotation
  * to set an id property (Default id is "`@id`")
  */
-fun needsIdAnnotation(cls: PsiClass): Boolean {
-  return !cls.qualifiedName!!.startsWith("edu.wpi")
-}
+fun needsIdAnnotation(cls: PsiClass): Boolean =
+  if (cls.qualifiedName!!.startsWith("edu.wpi")) false
+  else getIdName(cls) == null
 
-fun getUpperConstructor(constructorCall: YAMLKeyValue) =
-  try {
-    constructorCall.parent.parent as YAMLKeyValue
-  } catch (e: ClassCastException) {
-    null
+fun getUpperConstructor(constructorCall: YAMLKeyValue): YAMLKeyValue? =
+  givenTypeOrNull<YAMLKeyValue>(constructorCall.parent.parent)
+
+/**
+ * Whether or not this parameter/property is required.
+ * Does this by looking for `required=true` in its
+ * `JsonProperty` annotation
+ */
+fun isRequiredParam(param: PsiParameter): Boolean =
+  param.annotations.any {
+    it.text.contains(Regex("""@JsonProperty\(.*required( )?=( )?true"""))
   }
+
+/**
+ * If `a` is of type `T`, return `a`, otherwise return `null`
+ */
+inline fun <reified T> givenTypeOrNull(a: Any?): T? =
+  if (a is T) a else null
 
 /**
  * If value is of type `T`, returns the value itself. If value is an alias
@@ -100,16 +115,12 @@ fun getUpperConstructor(constructorCall: YAMLKeyValue) =
  * @param value the value that may or may not be an alias
  * @param T the desired type of the result
  */
-inline fun <reified T : YAMLPsiElement> anchorIfAliasNullIfWrongTypeElseSame(value: YAMLPsiElement): T? = when (value) {
-  is YAMLAliasImpl ->
-    try {
-      YAMLAliasReference(value).resolve()?.markedValue as T?
-    } catch (cce: ClassCastException) {
-      null
-    }
-  is T -> value
-  else -> null
-}
+inline fun <reified T : YAMLPsiElement> anchorIfAliasNullIfWrongTypeElseSame(value: YAMLPsiElement): T? =
+  when (value) {
+    is YAMLAliasImpl -> givenTypeOrNull<T>(YAMLAliasReference(value).resolve()?.markedValue)
+    is T -> value
+    else -> null
+  }
 
 /**
  * Get all the arguments that this constructor has, including ones
@@ -136,33 +147,18 @@ fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
       }
       for (keyVal in value.keyValues) {
         if (keyVal.keyText == "<<") {
-          val ref = YAMLAliasReference(keyVal as YAMLAliasImpl)
-          val other = ref.resolve()?.markedValue?.parent as YAMLKeyValue? ?: return default()
-          val otherArgs = getAllArgs(other)
-          for (kv2 in otherArgs) add(kv2)
+          if (keyVal is YAMLAliasImpl) {
+            Logger.getInstance(object {}.javaClass).debug("Yes! $keyVal is YAMLAlias!")
+            val ref = YAMLAliasReference(keyVal as YAMLAliasImpl)
+            val other = ref.resolve()?.markedValue?.parent as YAMLKeyValue? ?: return default()
+            val otherArgs = getAllArgs(other)
+            for (kv2 in otherArgs) add(kv2)
+          } else {
+            Logger.getInstance(object {}.javaClass).debug("No!!! $keyVal is not an alias!")
+          }
         } else add(keyVal)
       }
 
-      /*val params: MutableMap<ArgKey, YAMLValue> =
-          value.keyValues.map<YAMLKeyValue, Pair<ArgKey, YAMLValue>> { keyVal ->
-              (Pair(
-                  (anchorIfAliasNullIfWrongTypeElseSame<YAMLValue>(
-                      keyVal.key as YAMLPsiElement? ?: exit(keyVal)
-                  )?.text ?: exit(keyVal.key as YAMLPsiElement)), (keyVal.key ?: exit(keyVal)) as YAMLPsiElement
-              ) to keyVal.value!!)
-          }.toMap(mutableMapOf())
-      for (key in params.keys) {
-          if (key.argName == "<<") {
-              val ref = YAMLAliasReference(params[key] as YAMLAliasImpl)
-              val other = ref.resolve()?.markedValue?.parent as YAMLKeyValue? ?: return default()
-              val otherArgs = getAllArgs(other)
-              for (k2 in otherArgs.keys) {
-                  if (params[k2] == null) {
-                      params[k2] = otherArgs[k2]!!
-                  }
-              }
-          }
-      }*/
       args
     }
     is YAMLPlainTextImpl -> {

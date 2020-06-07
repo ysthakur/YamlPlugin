@@ -30,7 +30,7 @@ class MyYamlReferenceContributor : PsiReferenceContributor() {
                      */
                     override fun multiResolve(incompleteCode: Boolean): Array<ResolveResult> {
                       val cls = resolveToClass(element) ?: return emptyArray()
-                      return allYAMLConstructors(cls).union<PsiElement>(listOf(cls))
+                      return listOf(cls).union<PsiElement>(allYAMLConstructors(cls))
                         .map { r: PsiElement -> PsiElementResolveResult(r) }.toTypedArray()
                     }
                   }
