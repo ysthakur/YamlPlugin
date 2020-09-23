@@ -60,7 +60,7 @@ class YamlCompletionContributor : CompletionContributor() {
               constructorCall
             ) else null
             if (cls != null) {
-              val constr = resolveToConstructor(cls) ?: return
+              val constr = findConstructor(cls) ?: return
               addElems(constr.parameterList.parameters.map(PsiParameter::getName))
             }
           }

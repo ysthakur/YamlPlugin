@@ -10,11 +10,8 @@ import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLBlockSequenceImpl
 import org.jetbrains.yaml.psi.impl.YAMLMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
-import org.jetbrains.yaml.resolve.YAMLAliasReference
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
-import kotlin.contracts.ExperimentalContracts
-import kotlin.contracts.contract
 
 val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
 val classNameDotRegex = Regex("$classNameRegexStr\\.")
@@ -90,14 +87,14 @@ fun getIdArg(constructorCall: YAMLKeyValue): YAMLKeyValue? {
 }*/
 
 fun findIdArg(args: Iterable<YAMLKeyValue>, cls: PsiClass): YAMLKeyValue? {
-  return args.find { keyVal -> keyVal.keyText.withoutQuotes() == getIdName(cls) ?: return null }
+  return args.find { keyVal -> removeQuotes(keyVal.keyText) == getIdName(cls) ?: return null }
 }
 
 fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
-  arg.keyText.withoutQuotes() == idName
+  removeQuotes(arg.keyText) == idName
 
 fun findArg(constructorCall: YAMLKeyValue, argName: String) =
-  getAllArgs(constructorCall).find { keyVal -> keyVal.keyText.withoutQuotes() == argName }
+  getAllArgs(constructorCall).find { keyVal -> removeQuotes(keyVal.keyText) == argName }
 
 /**
  * Find a child PSI element inside this element recursively
@@ -161,7 +158,7 @@ fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
   } else {
     typeOf(upperConst)
   } ?: return null
-  return resolveToConstructor(cls)?.findParam(arg.keyText)
+  return findConstructor(cls)?.findParam(arg.keyText)
 }
 
 /**
@@ -185,7 +182,7 @@ fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> {
  * Find a constructor in the class by the name `className`, assuming there's
  * only one constructor used
  */
-fun resolveToConstructor(cls: PsiClass): PsiMethod? {
+fun findConstructor(cls: PsiClass): PsiMethod? {
   val cs = allYAMLConstructors(cls)
   return if (cs.isEmpty()) null else cs[0]
 }
@@ -247,13 +244,12 @@ fun resolveToClass(className: String, project: Project): PsiClass? =
  * id for this class ("@id" by default) if there
  * is a JsonIdentityInfo annotation
  */
-fun getIdName(cls: PsiClass): String? {
-  return (cls.annotations.find { annot ->
+fun getIdName(cls: PsiClass): String? =
+  cls.annotations.find { annot ->
     annot.qualifiedName?.endsWith("JsonIdentityInfo") ?: false
-  } ?: return null)
-    .findAttributeValue("property")?.text?.withoutQuotes()
-    ?: DEFAULT_ID
-}
+  }?.let { idAnnot ->
+    idAnnot.findAttributeValue("property")?.text?.let { removeQuotes(it) } ?: DEFAULT_ID
+  }
 
 /**
  * Find a package by name

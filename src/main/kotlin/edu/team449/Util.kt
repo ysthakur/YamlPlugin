@@ -31,7 +31,7 @@ val TYPE_ACCEPTING_SINGLE_TYPE_PARAMETER_REGEX =
 //val ArgKey.elem
 //  get() = this.second
 
-fun String.withoutQuotes() = this.removeSurrounding("\"")
+fun removeQuotes(s: String) = s.removeSurrounding("\"")
 
 fun PsiMethod.findAnnotation(annotName: String) =
   this.annotations.find { a -> (a.qualifiedName ?: "").afterDot() == annotName }
@@ -131,12 +131,6 @@ inline fun <reified T : YAMLPsiElement> anchorIfAliasNullIfWrongTypeElseSame(val
 fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
   val value = constructorCall.value
   val default = { emptyList<YAMLKeyValue>() }
-  val exit = { elem: YAMLPsiElement ->
-    throw NoSuchParameterException(
-      "(Unresolved)",
-      elem
-    )
-  }
   return when (value) {
     is YAMLMapping -> {
       val args = mutableListOf<YAMLKeyValue>()

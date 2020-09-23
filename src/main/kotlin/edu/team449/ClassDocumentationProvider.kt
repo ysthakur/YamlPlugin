@@ -29,10 +29,6 @@ class ClassDocumentationProvider : DocumentationProvider {
     return jDocProvider.getDocumentationElementForLookupItem(psiManager, `object`, element)
   }
 
-  override fun generateRenderedDoc(element: PsiElement): String? {
-    return jDocProvider.generateRenderedDoc(resolveRef(element) ?: element)
-  }
-
   override fun generateDoc(element: PsiElement, originalElement: PsiElement?): String? {
     return jDocProvider.generateDoc(resolveRef(element) ?: element, originalElement)
   }
