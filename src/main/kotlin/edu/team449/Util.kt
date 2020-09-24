@@ -19,7 +19,7 @@ import org.jetbrains.yaml.resolve.YAMLAliasReference
 const val ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS = "IntellijIdeaRulezzz"
 const val DEFAULT_ID = "@id"
 const val LIST_CLASS_SIMPLE_NAME = "List"
-const val VALID_IDENTIFIER_REGEX_STR = """[A-Za-z_$][A-Za-z0-9_${'$'}]*"""
+const val VALID_IDENTIFIER_REGEX_STR = """[A-Za-z_$][A-Za-z0-9_$]*"""
 val TYPE_ACCEPTING_SINGLE_TYPE_PARAMETER_REGEX =
   Regex("$VALID_IDENTIFIER_REGEX_STR(\\W*\\.\\W*$VALID_IDENTIFIER_REGEX_STR)*\\W*<\\W*$VALID_IDENTIFIER_REGEX_STR\\W*>")
 
@@ -54,10 +54,14 @@ fun extractTypeArgument(typeText: String) = typeText.substringAfter('<').removeS
 /**
  * Whether or not it's a list
  */
-fun PsiClass.isCollectionClass(): Boolean =
-  TODO("Figure out how collections work")
-  //this.name?.startsWith(LIST_CLASS_SIMPLE_NAME) ?: false
+//fun PsiClass.isCollectionClass(): Boolean =
+//  TODO("Figure out how collections work")
+//this.name?.startsWith(LIST_CLASS_SIMPLE_NAME) ?: false
 
+/**
+ * TODO generalize this maybe?
+ * Whether or not it's a list or other collection
+ */
 fun isCollectionClass(className: String) = className.contains(LIST_CLASS_SIMPLE_NAME)
 
 fun hasAnnotation(method: PsiMethod, annotName: String) = method.findAnnotation(annotName) != null
@@ -75,12 +79,11 @@ fun String.afterDot() = Regex("""\.[^.]*$""").find(this)?.value?.removePrefix(".
  * Currently just checks if it's from WPI
  * TODO this is a terrible solution, fix this
  */
-fun needsJsonAnnot(cls: PsiClass): Boolean {
-  val name = cls.qualifiedName!!
-  return !name.startsWith("edu.wpi")
-}
+fun needsJsonAnnot(cls: PsiClass): Boolean =
+  !cls.qualifiedName!!.startsWith("edu.wpi")
 
 /**
+ * TODO figure out why I made this in the first place
  * Whether or not it needs a `JsonIdentityInfo` annotation
  * to set an id property (Default id is "`@id`")
  */
@@ -130,12 +133,12 @@ inline fun <reified T : YAMLPsiElement> anchorIfAliasNullIfWrongTypeElseSame(val
  */
 fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
   val value = constructorCall.value
-  val default = { emptyList<YAMLKeyValue>() }
+  val default = emptyList<YAMLKeyValue>()
   return when (value) {
     is YAMLMapping -> {
       val args = mutableListOf<YAMLKeyValue>()
-      val add = { kv: YAMLKeyValue ->
-        val ind = args.indexOfFirst { kv2 -> kv2.keyText == kv.keyText }
+      fun add(kv: YAMLKeyValue) {
+        val ind = args.indexOfFirst { it.keyText == kv.keyText }
         if (ind == -1) args.add(kv)
         else args[ind] = kv
       }
@@ -143,10 +146,12 @@ fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
         if (keyVal.keyText == "<<") {
           if (keyVal is YAMLAliasImpl) {
             Logger.getInstance(object {}.javaClass).debug("Yes! $keyVal is YAMLAlias!")
-            val ref = YAMLAliasReference(keyVal as YAMLAliasImpl)
-            val other = ref.resolve()?.markedValue?.parent as YAMLKeyValue? ?: return default()
-            val otherArgs = getAllArgs(other)
-            for (kv2 in otherArgs) add(kv2)
+            val ref = YAMLAliasReference(keyVal)
+            val other = ref.resolve()?.markedValue?.parent
+            if (other is YAMLKeyValue) {
+              val otherArgs = getAllArgs(other)
+              for (kv2 in otherArgs) add(kv2)
+            } else return default
           } else {
             Logger.getInstance(object {}.javaClass).debug("No!!! $keyVal is not an alias!")
           }
@@ -155,12 +160,7 @@ fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
 
       args
     }
-    is YAMLPlainTextImpl -> {
-      getAllArgs(resolveToObjectDef(value).first ?: return default())
-    }
-    else -> default()
+    is YAMLPlainTextImpl -> resolveToObjectDef(value).first?.let(::getAllArgs) ?: default
+    else -> default
   }
 }
-
-class NoSuchParameterException(paramName: String, val elem: PsiElement) :
-  Exception("Could not find a parameter by the name of $paramName")

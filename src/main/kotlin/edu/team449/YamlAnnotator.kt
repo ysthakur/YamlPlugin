@@ -11,15 +11,12 @@ import com.intellij.psi.PsiParameter
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 
-private val elementsToAnnotate: MutableMap<PsiElement, Pair<HighlightSeverity, String>> = HashMap()
-
 //todo check that all the arguments' types are correct
 class YamlAnnotator : Annotator {
 
   override fun annotate(element: PsiElement, holder: AnnotationHolder) {
     val prevMsg = elementsToAnnotate.remove(element)
     if (prevMsg != null) {
-      Logger.getInstance(javaClass).info(prevMsg.second)
       holder.newAnnotation(prevMsg.first, prevMsg.second).create()
     } else {
       if (element is YAMLKeyValue && element.key?.text?.matches(classNameRegex) == true) {
@@ -44,50 +41,90 @@ class YamlAnnotator : Annotator {
   }
 
   private fun checkCtorCall(ctorDef: PsiMethod, ctorCall: YAMLKeyValue, cls: PsiClass) {
-    val params = ctorDef.parameterList.parameters.toMutableList()
+    val params = ctorDef.parameterList.parameters
 
-    try {
-      val args = getAllArgs(ctorCall)
-      val idName = getIdName(cls)
+    checkArgs(
+      ctorCall.key,
+      getIdName(cls),
+      params.filter(::isRequiredParam).map { it.name },
+      params.filterNot(::isRequiredParam).map { it.name },
+      getAllArgs(ctorCall)
+    )
 
-      // The Boolean value says whether or not the corresponding parameter has been set
-      val givenParam: MutableMap<PsiParameter, Boolean> =
-        params.filter(::isRequiredParam).map { Pair(it, false) }.toMap().toMutableMap()
+    /*val params = ctorDef.parameterList.parameters
 
-      val paramsToArgs = mutableMapOf<PsiParameter, YAMLKeyValue>()
+    val args = getAllArgs(ctorCall)
+    val idName = getIdName(cls)
 
-      //initialised to true if idName is null, i.e., there is no id
-      var foundId: Boolean = idName == null
+    val givenParams = mutableSetOf<PsiParameter>()
 
-      for (argKey in args) {
-        val argName = removeQuotes(argKey.keyText)
-        if (argName == idName) foundId = true
-        else params.find { it.name == argName }?.let { param ->
-          paramsToArgs[param] = argKey
-          if (givenParam[param]!!)
-            addErrorAnnotation(argKey, "Duplicate argument for property ${param.name}")
-          else
-            givenParam[param] = true
-        } ?: addErrorAnnotation(
+    //initialised to true if idName is null, i.e., there is no id
+    var foundId: Boolean = idName == null
+
+    for (argKey in args) {
+      val argName = removeQuotes(argKey.keyText)
+      if (argName == idName) foundId = true
+      else params.find { it.name == argName }?.let { param ->
+        if (param in givenParams) addErrorAnnotation(argKey, "Duplicate argument for property ${param.name}")
+        else givenParams += param
+      } ?: addErrorAnnotation(
+        argKey.key!!,
+        "Could not find a parameter named $argName"
+      )
+    }
+
+    if (!foundId) addErrorAnnotation(ctorCall.key!!, "Id property $idName not given")
+
+    //Check that all the parameters have been entered in
+    for (param in params.filter { isRequiredParam(it) && it !in givenParams }) addErrorAnnotation(
+      ctorCall.key!!,
+      "No argument given for required property ${param.name}"
+    )*/
+  }
+
+  /**
+   * Check all arguments for a constructor call.
+   *
+   * @param parent The parent (constructor/file?) to highlight with errors
+   * @param idName The id parameter (null if there is none)
+   * @param requiredParams The names of the required parameters
+   * @param otherParams The names of the non-required parameters
+   * @param args The actual arguments given that need to be checked
+   */
+  private fun checkArgs(
+    parent: PsiElement?,
+    idName: String?,
+    requiredParams: List<String>,
+    otherParams: List<String>,
+    args: List<YAMLKeyValue>
+  ) {
+    val givenParams = mutableSetOf<String>()
+
+    //initialised to true if idName is null, i.e., there is no id
+    var foundId: Boolean = idName == null
+
+    for (argKey in args) {
+      val argName = removeQuotes(argKey.keyText)
+      if (argName == idName) foundId = true
+      else {
+        if (argName in requiredParams || argName in otherParams) {
+          if (argName in givenParams) addErrorAnnotation(argKey, "Duplicate argument for property $argName")
+          else givenParams += argName
+        } else addErrorAnnotation(
           argKey.key!!,
           "Could not find a parameter named $argName"
         )
       }
+    }
 
-      if (!foundId) {
-        addErrorAnnotation(ctorCall.key!!, "Id property $idName not given")
-      }
+    if (parent != null) {
+      if (!foundId) addErrorAnnotation(parent, "Id property $idName not given")
 
       //Check that all the parameters have been entered in
-      for (param in givenParam.filterValues { !it }.keys) {
-        addErrorAnnotation(
-          ctorCall.key!!,
-          "No argument given for required property ${param.name}"
-        )
-      }
-
-    } catch (nspe: NoSuchParameterException) {
-      addErrorAnnotation(nspe.elem, "Could not resolve parameter")
+      for (param in requiredParams) if (param !in givenParams) addErrorAnnotation(
+        parent,
+        "No argument given for required property $param"
+      )
     }
   }
 
@@ -98,6 +135,8 @@ class YamlAnnotator : Annotator {
       addErrorAnnotation(value, "Could not find previous object with id ${value.text}")
     } else if (ref.second) {
       addErrorAnnotation(value, "Illegal forward reference")
+    } else {
+      addAnnotation(value, HighlightSeverity.INFORMATION, "Resolved to ${ref.first?.text}")
     }
   }
 
@@ -107,4 +146,8 @@ class YamlAnnotator : Annotator {
 
   private fun addErrorAnnotation(element: PsiElement, msg: String) =
     addAnnotation(element, HighlightSeverity.ERROR, msg)
+
+  companion object {
+    private val elementsToAnnotate: MutableMap<PsiElement, Pair<HighlightSeverity, String>> = HashMap()
+  }
 }

@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
+val classNameMaybeDot = Regex("""[A-Za-z_][A-Za-z_0-9]*(\.[A-Za-z_][A-Za-z_0-9]*)*?(\.[A-Za-z_]?)?""")
 val classNameDotRegex = Regex("$classNameRegexStr\\.")
 val classNameRegex = Regex(classNameRegexStr)
 val robotPkgName = "org.usfirst.frc.team449.robot"
@@ -29,14 +30,12 @@ fun Project.robotClass() =
 /**
  * Resolve reference to a single element
  */
-fun resolveRef(element: PsiElement?): PsiElement? {
-  return when (element) {
-    null -> null
-    is YAMLPlainTextImpl -> resolveToIdDecl(element) ?: resolveRef(resolveToObjectDef(element).first)
+fun resolveRef(element: PsiElement): PsiElement? =
+  when (element) {
+    is YAMLPlainTextImpl -> resolveToIdDecl(element) ?: resolveToObjectDef(element).first?.let(::resolveRef)
     is YAMLKeyValue -> resolveToClass(element) ?: resolveToParameter(element)
     else -> element
   }
-}
 
 fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? {
   val file = idRef.containingFile
@@ -63,16 +62,9 @@ fun resolveToObjectDef(idArg: YAMLPlainTextImpl): Pair<YAMLKeyValue?, Boolean> {
   val file = idArg.containingFile
   var forwardRef = false
   return findElementLinearly(file) { elem ->
-    //val cls = elem.javaClass
-    //val text = elem.text
     if (elem == idArg) forwardRef = true
-    if (elem !is YAMLKeyValue || elem.value !is YAMLMappingImpl) {
-      false
-    } else {
-      val otherId = getIdArg(elem) ?: return@findElementLinearly false
-      //Logger.getInstance(MyYamlAnnotator::class.java).warn("Value is ${otherId.valueText}")
-      otherId.valueText == idArg.text
-    }
+
+    elem is YAMLKeyValue && getIdArg(elem)?.let { it.valueText == idArg.text } ?: false
   } as YAMLKeyValue? to forwardRef
 }
 
@@ -157,8 +149,8 @@ fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
     arg.project.robotClass()
   } else {
     typeOf(upperConst)
-  } ?: return null
-  return findConstructor(cls)?.findParam(arg.keyText)
+  }
+  return cls?.let { findConstructor(it)?.findParam(arg.keyText) }
 }
 
 /**
@@ -168,24 +160,19 @@ fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
  */
 fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> {
   val needsJsonAnnot = needsJsonAnnot(cls)
-  val pred =
-    { method: PsiMethod ->
-      if (needsJsonAnnot) hasAnnotation(
-        method,
-        "JsonCreator"
-      ) else method.isConstructor
-    }
-  return cls.methods.filter(pred)
+  return cls.methods.filter { method ->
+    if (needsJsonAnnot) hasAnnotation(
+      method,
+      "JsonCreator"
+    ) else method.isConstructor
+  }
 }
 
 /**
  * Find a constructor in the class by the name `className`, assuming there's
  * only one constructor used
  */
-fun findConstructor(cls: PsiClass): PsiMethod? {
-  val cs = allYAMLConstructors(cls)
-  return if (cs.isEmpty()) null else cs[0]
-}
+fun findConstructor(cls: PsiClass): PsiMethod? = allYAMLConstructors(cls).firstOrNull()
 
 /**
  * Return the Java class that the key constructs
@@ -193,14 +180,11 @@ fun findConstructor(cls: PsiClass): PsiMethod? {
  * type of the parameter of the parent with the same
  * name
  */
-fun typeOf(keyValue: YAMLKeyValue): PsiClass? {
-  if (isConstructorCall(keyValue)) {
-    return resolveToClass(keyValue)
-  } else {
-    val param = resolveToParameter(keyValue) ?: return null
-    return PsiTypesUtil.getPsiClass(param.type)
-  }
-}
+fun typeOf(keyValue: YAMLKeyValue): PsiClass? =
+  if (isConstructorCall(keyValue))
+    resolveToClass(keyValue)
+  else
+    resolveToParameter(keyValue)?.let { PsiTypesUtil.getPsiClass(it.type) }
 
 /**
  * Whether or not the argument in the YAML file matches
@@ -225,8 +209,9 @@ fun matchesType(arg: YAMLKeyValue, className: String): Boolean {
       return true
     } else return false //Because it should be a list
   } else {
-    val realType = typeOf(arg) ?: return false
-    return realType.qualifiedName == className.replaceAfter('<', "")
+    return typeOf(arg)?.let {
+      it.qualifiedName == className.replaceAfter('<', "")
+    } ?: false
   }
 }
 

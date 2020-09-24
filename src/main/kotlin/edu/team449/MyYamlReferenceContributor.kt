@@ -18,33 +18,36 @@ class MyYamlReferenceContributor : PsiReferenceContributor() {
           context: ProcessingContext
         ): Array<PsiReference> =
           when (element) {
-            is YAMLKeyValue -> {
+            is YAMLKeyValue ->
               arrayOf(
-                //It's a constructor call
-                if (isConstructorCall(element)) {
-                  object : PsiPolyVariantReferenceBase<YAMLKeyValue>(element) {
-                    //override fun resolve() = resolveToConstructor(element)
-
-                    /**
-                     * Return both the class declaration and its constructors
-                     */
-                    override fun multiResolve(incompleteCode: Boolean): Array<ResolveResult> {
-                      val cls = resolveToClass(element) ?: return emptyArray()
-                      return listOf(cls).union<PsiElement>(allYAMLConstructors(cls))
-                        .map { r: PsiElement -> PsiElementResolveResult(r) }.toTypedArray()
-                    }
-                  }
-                  //Otherwise, it's a parameter
-                } else object : PsiReferenceBase<YAMLKeyValue>(element) {
-                  override fun resolve() =
-                    resolveToParameter(element)
-                })
-            }
-            is YAMLPlainTextImpl -> arrayOf(object : PsiReferenceBase<YAMLPlainTextImpl>(element) {
-              override fun resolve() = resolveToIdDecl(element)
-            })
+                if (isConstructorCall(element)) ConstructorRef(element) //It's a constructor call
+                else ParamRef(element) //otherwise, it's an argument/reference to a parameter
+              )
+            is YAMLPlainTextImpl -> arrayOf(IdRef(element))
             else -> emptyArray()
           }
       }
     )
+}
+
+class ConstructorRef(val ctor: YAMLKeyValue) : PsiPolyVariantReferenceBase<YAMLKeyValue>(ctor) {
+  //override fun resolve() = resolveToConstructor(element)
+  /**
+   * Return both the class declaration and its constructors
+   */
+  override fun multiResolve(incompleteCode: Boolean): Array<ResolveResult> {
+    val cls = resolveToClass(ctor) ?: return emptyArray()
+    return (allYAMLConstructors(cls) + cls)
+      .map(::PsiElementResolveResult)
+      .toTypedArray()
+  }
+}
+
+class ParamRef(val param: YAMLKeyValue) : PsiReferenceBase<YAMLKeyValue>(param) {
+  override fun resolve() =
+    resolveToParameter(param)
+}
+
+class IdRef(val id: YAMLPlainTextImpl) : PsiReferenceBase<YAMLPlainTextImpl>(id) {
+  override fun resolve() = resolveToObjectDef(id).first
 }

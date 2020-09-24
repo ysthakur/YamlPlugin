@@ -3,22 +3,20 @@ package edu.team449
 import com.intellij.lang.documentation.DocumentationProvider
 import com.intellij.lang.java.JavaDocumentationProvider
 import com.intellij.openapi.editor.Editor
-import com.intellij.psi.PsiDocCommentBase
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import java.util.function.Consumer
 
 class ClassDocumentationProvider : DocumentationProvider {
 
   private val jDocProvider: JavaDocumentationProvider = JavaDocumentationProvider()
 
   override fun getUrlFor(element: PsiElement?, originalElement: PsiElement?): MutableList<String>? {
-    return jDocProvider.getUrlFor(resolveRef(element), originalElement)
+    return jDocProvider.getUrlFor(element?.let(::resolveRef), originalElement)
   }
 
   override fun getQuickNavigateInfo(element: PsiElement?, originalElement: PsiElement?): String? {
-    return jDocProvider.getQuickNavigateInfo(resolveRef(element), originalElement)
+    return jDocProvider.getQuickNavigateInfo(element?.let(::resolveRef), originalElement)
   }
 
   override fun getDocumentationElementForLookupItem(
