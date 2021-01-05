@@ -5,11 +5,9 @@ import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiParameter
-import org.jetbrains.yaml.psi.YAMLKeyValue
-import org.jetbrains.yaml.psi.YAMLMapping
-import org.jetbrains.yaml.psi.YAMLPsiElement
-import org.jetbrains.yaml.psi.YAMLValue
+import org.jetbrains.yaml.psi.*
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
+import org.jetbrains.yaml.psi.impl.YAMLBlockMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 import org.jetbrains.yaml.resolve.YAMLAliasReference
 
@@ -88,11 +86,19 @@ fun needsJsonAnnot(cls: PsiClass): Boolean =
  * to set an id property (Default id is "`@id`")
  */
 fun needsIdAnnotation(cls: PsiClass): Boolean =
-  if (cls.qualifiedName!!.startsWith("edu.wpi")) false
+  if (cls.qualifiedName!!.startsWith(wpiPackage)) false
   else getIdName(cls) == null
 
-fun getUpperConstructor(constructorCall: YAMLKeyValue): YAMLKeyValue? =
-  givenTypeOrNull<YAMLKeyValue>(constructorCall.parent.parent)
+fun isTopLevel(keyVal: YAMLKeyValue): Boolean = keyVal.parent?.parent is YAMLDocument
+
+/**
+ * Get the constructor call that this is an argument to, but if
+ * there isn't one, returns `null`
+ */
+fun getUpperConstructorCall(ctorCall: YAMLKeyValue): YAMLKeyValue? = when (val upperCtor = ctorCall.parent?.parent) {
+  is YAMLKeyValue -> upperCtor
+  else -> null
+}
 
 /**
  * Whether or not this parameter/property is required.
@@ -120,10 +126,15 @@ inline fun <reified T> givenTypeOrNull(a: Any?): T? =
  */
 inline fun <reified T : YAMLPsiElement> anchorIfAliasNullIfWrongTypeElseSame(value: YAMLPsiElement): T? =
   when (value) {
-    is YAMLAliasImpl -> givenTypeOrNull<T>(YAMLAliasReference(value).resolve()?.markedValue)
+    is YAMLAliasImpl -> givenTypeOrNull<T>(anchorValue(value))
     is T -> value
     else -> null
   }
+
+/**
+ * Gets the value referred to by the alias, if there is one
+ */
+fun anchorValue(alias: YAMLAliasImpl): YAMLValue? = YAMLAliasReference(alias).resolve()?.markedValue
 
 /**
  * Get all the arguments that this constructor has, including ones

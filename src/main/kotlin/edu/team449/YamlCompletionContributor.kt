@@ -6,18 +6,15 @@ import com.intellij.codeInsight.completion.CompletionProvider
 import com.intellij.codeInsight.completion.CompletionResultSet
 import com.intellij.codeInsight.completion.CompletionType.BASIC
 import com.intellij.codeInsight.lookup.LookupElementBuilder
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiPackage
 import com.intellij.psi.PsiParameter
 import com.intellij.util.ProcessingContext
-import org.jetbrains.annotations.NotNull
 import org.jetbrains.yaml.YAMLLanguage
 import org.jetbrains.yaml.YAMLTokenTypes
 import org.jetbrains.yaml.psi.YAMLKeyValue
-import org.jetbrains.yaml.psi.YAMLPsiElement
 
 class YamlCompletionContributor : CompletionContributor() {
 
@@ -49,7 +46,7 @@ class YamlCompletionContributor : CompletionContributor() {
           else {
             val constructorCall = element.parent.parent.parent
             if (constructorCall is YAMLKeyValue)
-              typeOf(constructorCall)?.let { cls ->
+              classOf(constructorCall)?.let { cls ->
                 findConstructor(cls)?.let { ctor ->
                   addElems(ctor.parameterList.parameters.map(PsiParameter::getName))
                 }

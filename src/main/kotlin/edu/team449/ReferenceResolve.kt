@@ -5,27 +5,35 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTypesUtil
+import edu.team449.RobotStuff.robotClass
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLBlockSequenceImpl
 import org.jetbrains.yaml.psi.impl.YAMLMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.concurrent.thread
+//import kotlin.concurrent.thread
 
 val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
 val classNameMaybeDot = Regex("""[A-Za-z_][A-Za-z_0-9]*(\.[A-Za-z_][A-Za-z_0-9]*)*?(\.[A-Za-z_]?)?""")
 val classNameDotRegex = Regex("$classNameRegexStr\\.")
 val classNameRegex = Regex(classNameRegexStr)
 val robotPkgName = "org.usfirst.frc.team449.robot"
+val wpiPackage = "edu.wpi"
 val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
 
 val LOG = Logger.getInstance(object {}.javaClass)
 
-//var ROBOT_CLASS_CACHED: PsiClass? = null
+object RobotStuff {
+  private var robotClasses: MutableMap<Project, PsiClass> = mutableMapOf()
+  private var robotCtors: MutableMap<Project, PsiMethod> = mutableMapOf()
 
-fun Project.robotClass() =
-  resolveToClass(ROBOT_MAP_QUALIFIED_NAME, this)
+  fun robotClass(project: Project): PsiClass =
+    robotClasses.getOrPut(project) { resolveToClass(ROBOT_MAP_QUALIFIED_NAME, project)!! }
+
+  fun robotConstructor(project: Project): PsiMethod =
+    robotCtors.getOrPut(project) { findConstructor(robotClass(project))!! }
+}
 
 /**
  * Resolve reference to a single element
@@ -107,6 +115,7 @@ fun findElementLinearly(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiE
 /**
  * This apparently doesn't work because it's in a different thread
  */
+/*
 fun findElement(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? {
   val childThreads = AtomicReference<MutableSet<Thread>>(mutableSetOf())
   val mainRes = AtomicReference<PsiElement?>()
@@ -127,6 +136,7 @@ fun findElement(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? 
   }
   return mainRes.get()
 }
+*/
 
 /**
  * Find the class whose constructor/JsonCreator is being called
@@ -134,23 +144,20 @@ fun findElement(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? 
 fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
   resolveToClass(constructorCall.keyText, constructorCall.project)
 
+/**
+ * If the input is an alias, it keeps trying to find the
+ * real value referred to by it. If not, it just gives it back.
+ */
+fun getRealValue(element: PsiElement): PsiElement? =
+  if (element is YAMLAliasImpl) anchorValue(element)?.let(::getRealValue)
+  else element
+
 fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
-  if (arg.key is YAMLAliasImpl) {
-    val anchoredValue = anchorIfAliasNullIfWrongTypeElseSame<YAMLKeyValue>(arg.key as YAMLAliasImpl)
-    anchoredValue?.let {
-      val param = resolveToParameter(anchoredValue)
-      param?.let { return@resolveToParameter param }
-      LOG.debug("${arg.key} cannot be resolved to a parameter")
-    }
-    if (anchoredValue == null) LOG.debug("anchoredValue is null?")
-  }
-  val upperConst = getUpperConstructor(arg)
-  val cls = if (upperConst == null) {
-    arg.project.robotClass()
-  } else {
-    typeOf(upperConst)
-  }
-  return cls?.let { findConstructor(it)?.findParam(arg.keyText) }
+  val upperConst = getUpperConstructorCall(arg)
+  val cls = upperConst?.let(::classOf) ?: robotClass(arg.project)
+  //Make sure it's not an alias, resolve to the real value
+  val paramName = arg.key?.let(::getRealValue)?.text
+  return cls.let { cls -> paramName?.let { findConstructor(cls)?.findParam(it) } }
 }
 
 /**
@@ -158,15 +165,10 @@ fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
  * YAML files (whether they're actual constructors or methods
  * annotated with `JsonCreator`)
  */
-fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> {
-  val needsJsonAnnot = needsJsonAnnot(cls)
-  return cls.methods.filter { method ->
-    if (needsJsonAnnot) hasAnnotation(
-      method,
-      "JsonCreator"
-    ) else method.isConstructor
-  }
-}
+fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> =
+  cls.methods.filter(
+    if (needsJsonAnnot(cls)) { method -> hasAnnotation(method, "JsonCreator") }
+    else { method -> method.isConstructor })
 
 /**
  * Find a constructor in the class by the name `className`, assuming there's
@@ -180,7 +182,7 @@ fun findConstructor(cls: PsiClass): PsiMethod? = allYAMLConstructors(cls).firstO
  * type of the parameter of the parent with the same
  * name
  */
-fun typeOf(keyValue: YAMLKeyValue): PsiClass? =
+fun classOf(keyValue: YAMLKeyValue): PsiClass? =
   if (isConstructorCall(keyValue))
     resolveToClass(keyValue)
   else
@@ -202,14 +204,16 @@ fun matchesType(arg: YAMLKeyValue, className: String): Boolean {
     if (list is YAMLBlockSequenceImpl && hasSingleTypeParameter(className)) {
       val innerType = extractTypeArgument(className)
       for (item in list.items) {
-        val value =
-          anchorIfAliasNullIfWrongTypeElseSame<YAMLKeyValue>(item.value ?: return false) ?: return false
-        if (!matchesType(value, innerType)) return false
+        if (item.value != null) {
+          val value =
+            anchorIfAliasNullIfWrongTypeElseSame<YAMLKeyValue>(item.value!!)
+          if (value == null || !matchesType(value, innerType)) return false
+        }
       }
       return true
     } else return false //Because it should be a list
   } else {
-    return typeOf(arg)?.let {
+    return classOf(arg)?.let {
       it.qualifiedName == className.replaceAfter('<', "")
     } ?: false
   }
@@ -226,11 +230,14 @@ fun resolveToClass(className: String, project: Project): PsiClass? =
 
 /**
  * Get the name of the property representing the
- * id for this class ("@id" by default) if there
- * is a JsonIdentityInfo annotation
+ * id for this class if there's a JsonIdentityInfo annotation.
+ * @return `null` if there's no `JsonIdentityInfo` annotation,
+ *         '@id' if the name hasn't been set or if it's a WPI
+ *         class (identified by package name), and the custom id otherwise.
  */
 fun getIdName(cls: PsiClass): String? =
-  cls.annotations.find { annot ->
+  if (cls.name?.startsWith(wpiPackage) == true) DEFAULT_ID
+  else cls.annotations.find { annot ->
     annot.qualifiedName?.endsWith("JsonIdentityInfo") ?: false
   }?.let { idAnnot ->
     idAnnot.findAttributeValue("property")?.text?.let { removeQuotes(it) } ?: DEFAULT_ID
