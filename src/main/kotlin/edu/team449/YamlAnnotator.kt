@@ -4,10 +4,7 @@ import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiMethod
-import com.intellij.psi.PsiParameter
+import com.intellij.psi.*
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 
@@ -43,12 +40,17 @@ class YamlAnnotator : Annotator {
   private fun checkCtorCall(ctorDef: PsiMethod, ctorCall: YAMLKeyValue, cls: PsiClass) {
     val params = ctorDef.parameterList.parameters
 
+    val (requiredParams, otherParams) = params.partition(::isRequiredParam)
+    val idName = getIdName(cls)
+
     checkArgs(
+      ctorCall,
       ctorCall.key,
-      getIdName(cls),
-      params.filter(::isRequiredParam).map { it.name },
-      params.filterNot(::isRequiredParam).map { it.name },
-      getAllArgs(ctorCall)
+      idName,
+      idName == null || cls.qualifiedName!!.startsWith(wpiPackage),
+      requiredParams.map { it.name },
+      otherParams.map { it.name },
+      getAllArgs2(ctorCall)
     )
 
     /*val params = ctorDef.parameterList.parameters
@@ -92,34 +94,35 @@ class YamlAnnotator : Annotator {
    * @param args The actual arguments given that need to be checked
    */
   private fun checkArgs(
+    ctorCall: YAMLKeyValue,
     parent: PsiElement?,
     idName: String?,
+    isIdRequired: Boolean,
     requiredParams: List<String>,
     otherParams: List<String>,
-    args: List<YAMLKeyValue>
+    args: List<Pair<String, YAMLKeyValue>>
   ) {
     val givenParams = mutableSetOf<String>()
+    var foundId = isIdRequired || idName == null
 
-    //initialised to true if idName is null, i.e., there is no id
-    var foundId: Boolean = idName == null
-
-    for (argKey in args) {
-      val argName = removeQuotes(argKey.keyText)
-      if (argName == idName) foundId = true
-      else {
-        if (argName in requiredParams || argName in otherParams) {
-          if (argName in givenParams) addErrorAnnotation(argKey, "Duplicate argument for property $argName")
-          else givenParams += argName
-        } else addErrorAnnotation(
-          argKey.key!!,
+    for ((keyText, keyVal) in args) {
+      val argName = removeQuotes(keyText)
+      if (argName == idName) {
+        foundId = true
+        ids[keyVal.valueText] = SmartPointerManager.createPointer(ctorCall)
+      } else if (argName in requiredParams || argName in otherParams) {
+        if (argName in givenParams) addErrorAnnotation(keyVal, "Duplicate argument for property $argName")
+        else givenParams += argName
+      } else {
+        addErrorAnnotation(
+          keyVal.key!!,
           "Could not find a parameter named $argName"
         )
       }
     }
 
     if (parent != null) {
-      if (!foundId) addErrorAnnotation(parent, "Id property $idName not given")
-
+      if (!foundId) addErrorAnnotation(parent, "No argument given for id parameter $idName")
       //Check that all the parameters have been entered in
       for (param in requiredParams) if (param !in givenParams) addErrorAnnotation(
         parent,
@@ -128,16 +131,20 @@ class YamlAnnotator : Annotator {
     }
   }
 
+  /**
+   * Check if a reference is invalid
+   */
   private fun checkReference(value: YAMLPlainTextImpl) {
-    //Invalid reference
-    val ref = resolveToObjectDef(value)
-    if (ref.first == null) {
-      addErrorAnnotation(value, "Could not find previous object with id ${value.text}")
-    } else if (ref.second) {
-      addErrorAnnotation(value, "Illegal forward reference")
-    } else {
-      addAnnotation(value, HighlightSeverity.INFORMATION, "Resolved to ${ref.first?.text}")
+    val pointer = ids[value.text]
+    val ref = pointer?.element
+    if (ref == null) {
+      addErrorAnnotation(value, "Could not find previous object with id ${value.text}, ids=$ids")
+      //It looks like the element it was referring to has been deleted
+      if (pointer != null) ids.remove(value.text)
     }
+    //TODO check for forward references
+//    else if (ref.second) {
+//      addErrorAnnotation(value, "Illegal forward reference")
   }
 
   private fun addAnnotation(element: PsiElement, severity: HighlightSeverity, msg: String) {
@@ -148,6 +155,9 @@ class YamlAnnotator : Annotator {
     addAnnotation(element, HighlightSeverity.ERROR, msg)
 
   companion object {
+    val LOG: Logger = Logger.getInstance(this::class.java)
+    //TODO Make the keys smart pointers to avoid memory leaks
     private val elementsToAnnotate: MutableMap<PsiElement, Pair<HighlightSeverity, String>> = HashMap()
+    internal val ids: MutableMap<String, SmartPsiElementPointer<YAMLKeyValue>> = HashMap()
   }
 }

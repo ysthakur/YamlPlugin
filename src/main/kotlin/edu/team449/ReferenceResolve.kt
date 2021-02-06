@@ -11,15 +11,15 @@ import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLBlockSequenceImpl
 import org.jetbrains.yaml.psi.impl.YAMLMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
-import java.util.concurrent.atomic.AtomicReference
+
 //import kotlin.concurrent.thread
 
-val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
+const val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
 val classNameMaybeDot = Regex("""[A-Za-z_][A-Za-z_0-9]*(\.[A-Za-z_][A-Za-z_0-9]*)*?(\.[A-Za-z_]?)?""")
 val classNameDotRegex = Regex("$classNameRegexStr\\.")
 val classNameRegex = Regex(classNameRegexStr)
-val robotPkgName = "org.usfirst.frc.team449.robot"
-val wpiPackage = "edu.wpi"
+const val robotPkgName = "org.usfirst.frc.team449.robot"
+const val wpiPackage = "edu.wpi"
 val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
 
 val LOG = Logger.getInstance(object {}.javaClass)
@@ -40,7 +40,10 @@ object RobotStuff {
  */
 fun resolveRef(element: PsiElement): PsiElement? =
   when (element) {
-    is YAMLPlainTextImpl -> resolveToIdDecl(element) ?: resolveToObjectDef(element).first?.let(::resolveRef)
+    is YAMLPlainTextImpl ->
+      YamlAnnotator.ids[element.text]?.element ?: resolveToIdDecl(element) ?: resolveToObjectDef(
+        element
+      ).first?.let(::resolveRef)
     is YAMLKeyValue -> resolveToClass(element) ?: resolveToParameter(element)
     else -> element
   }
@@ -72,14 +75,14 @@ fun resolveToObjectDef(idArg: YAMLPlainTextImpl): Pair<YAMLKeyValue?, Boolean> {
   return findElementLinearly(file) { elem ->
     if (elem == idArg) forwardRef = true
 
-    elem is YAMLKeyValue && getIdArg(elem)?.let { it.valueText == idArg.text } ?: false
+    elem is YAMLKeyValue && getIdValue(elem)?.let { it == idArg.text } ?: false
   } as YAMLKeyValue? to forwardRef
 }
 
-fun getIdArg(constructorCall: YAMLKeyValue): YAMLKeyValue? {
+fun getIdValue(constructorCall: YAMLKeyValue): String? {
   val cls = resolveToClass(constructorCall) ?: return null
   val idStr = getIdName(cls) ?: return null
-  return findArg(constructorCall, idStr)
+  return getAllArgs2(constructorCall).find { (name, _) -> removeQuotes(name) == idStr }?.first
 }
 
 /*fun getIdArg(args: Iterable<YAMLKeyValue>, constructorCall: YAMLKeyValue): YAMLKeyValue? {
@@ -93,8 +96,8 @@ fun findIdArg(args: Iterable<YAMLKeyValue>, cls: PsiClass): YAMLKeyValue? {
 fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
   removeQuotes(arg.keyText) == idName
 
-fun findArg(constructorCall: YAMLKeyValue, argName: String) =
-  getAllArgs(constructorCall).find { keyVal -> removeQuotes(keyVal.keyText) == argName }
+//fun findArg(constructorCall: YAMLKeyValue, argName: String): YAMLValue =
+//  getAllArgs2(constructorCall).filterValues { keyVal -> removeQuotes(keyVal.keyText) == argName }
 
 /**
  * Find a child PSI element inside this element recursively
@@ -154,10 +157,10 @@ fun getRealValue(element: PsiElement): PsiElement? =
 
 fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
   val upperConst = getUpperConstructorCall(arg)
-  val cls = upperConst?.let(::classOf) ?: robotClass(arg.project)
+  val clazz = upperConst?.let(::classOf) ?: robotClass(arg.project)
   //Make sure it's not an alias, resolve to the real value
   val paramName = arg.key?.let(::getRealValue)?.text
-  return cls.let { cls -> paramName?.let { findConstructor(cls)?.findParam(it) } }
+  return clazz.let { cls -> paramName?.let { findConstructor(cls)?.findParam(it) } }
 }
 
 /**
@@ -236,7 +239,7 @@ fun resolveToClass(className: String, project: Project): PsiClass? =
  *         class (identified by package name), and the custom id otherwise.
  */
 fun getIdName(cls: PsiClass): String? =
-  if (cls.name?.startsWith(wpiPackage) == true) DEFAULT_ID
+  if (cls.qualifiedName?.startsWith(wpiPackage) == true) DEFAULT_ID
   else cls.annotations.find { annot ->
     annot.qualifiedName?.endsWith("JsonIdentityInfo") ?: false
   }?.let { idAnnot ->

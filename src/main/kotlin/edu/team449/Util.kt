@@ -29,7 +29,7 @@ val TYPE_ACCEPTING_SINGLE_TYPE_PARAMETER_REGEX =
 //val ArgKey.elem
 //  get() = this.second
 
-fun removeQuotes(s: String) = s.removeSurrounding("\"")
+fun removeQuotes(s: String) = s.removeSurrounding("\"").removeSurrounding("'")
 
 fun PsiMethod.findAnnotation(annotName: String) =
   this.annotations.find { a -> (a.qualifiedName ?: "").afterDot() == annotName }
@@ -124,7 +124,7 @@ inline fun <reified T> givenTypeOrNull(a: Any?): T? =
  * @param value the value that may or may not be an alias
  * @param T the desired type of the result
  */
-inline fun <reified T : YAMLPsiElement> anchorIfAliasNullIfWrongTypeElseSame(value: YAMLPsiElement): T? =
+inline fun <reified T : PsiElement> anchorIfAliasNullIfWrongTypeElseSame(value: PsiElement): T? =
   when (value) {
     is YAMLAliasImpl -> givenTypeOrNull<T>(anchorValue(value))
     is T -> value
@@ -147,6 +147,7 @@ fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
   val default = emptyList<YAMLKeyValue>()
   return when (value) {
     is YAMLMapping -> {
+//      val argsMap = mutableMapOf<YAMLPsiElement, YAMLKeyValue>()
       val args = mutableListOf<YAMLKeyValue>()
       fun add(kv: YAMLKeyValue) {
         val ind = args.indexOfFirst { it.keyText == kv.keyText }
@@ -155,16 +156,21 @@ fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
       }
       for (keyVal in value.keyValues) {
         if (keyVal.keyText == "<<") {
-          if (keyVal is YAMLAliasImpl) {
-            Logger.getInstance(object {}.javaClass).debug("Yes! $keyVal is YAMLAlias!")
-            val ref = YAMLAliasReference(keyVal)
+//          LOG.warn("${keyVal is YAMLAliasImpl}")
+          val keyValue = keyVal.value
+          if (keyValue is YAMLAliasImpl) {
+//            LOG.warn("Yes! $keyVal is YAMLAlias!")
+            val ref = YAMLAliasReference(keyValue)
             val other = ref.resolve()?.markedValue?.parent
             if (other is YAMLKeyValue) {
               val otherArgs = getAllArgs(other)
               for (kv2 in otherArgs) add(kv2)
-            } else return default
+            } else {
+              LOG.warn("NO!! $other is not a keyvalue! ${keyVal.valueText}")
+              return default
+            }
           } else {
-            Logger.getInstance(object {}.javaClass).debug("No!!! $keyVal is not an alias!")
+            LOG.warn("No!!! ${keyValue?.textRange} is not an alias!")
           }
         } else add(keyVal)
       }
@@ -172,6 +178,46 @@ fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
       args
     }
     is YAMLPlainTextImpl -> resolveToObjectDef(value).first?.let(::getAllArgs) ?: default
+    else -> default
+  }
+}
+
+/**
+ * Get all the arguments that this constructor has, including ones
+ * copied using aliases/anchors.
+ * Does not guarantee that all the `YAMLKeyValue`'s will have
+ * `constructorCall` as their parent
+ */
+fun getAllArgs2(constructorCall: YAMLKeyValue): List<Pair<String, YAMLKeyValue>> {
+  val value = constructorCall.value
+  val default = listOf<Pair<String, YAMLKeyValue>>()
+  return when (value) {
+    is YAMLMapping -> {
+      val keyValues = value.keyValues
+      val arg1 = keyValues.firstOrNull()
+      val (realKeyVals, inherited) =
+        if (arg1?.keyText == "<<") {
+          when (val alias = arg1.value) {
+            is YAMLAliasImpl ->
+              Pair(keyValues.drop(1), getAllArgs2(anchorValue(alias)!!.parent as YAMLKeyValue))
+            else -> {
+              LOG.error("Element at textRange ${alias?.textRange} is not an alias")
+              TODO()
+            }
+          }
+
+        } else {
+          Pair(keyValues, default)
+        }
+      val args = realKeyVals.map { keyVal ->
+        when (val key = keyVal.key) {
+          is YAMLAliasImpl -> Pair(anchorValue(key)!!.lastChild.text, keyVal)
+          else -> Pair(key!!.text, keyVal)
+        }
+      }
+      args + inherited.filter { (name, _) -> !args.any { it.first == name } }
+    }
+    is YAMLPlainTextImpl -> YamlAnnotator.ids[value.text]?.let { it.element?.let(::getAllArgs2) } ?: default
     else -> default
   }
 }

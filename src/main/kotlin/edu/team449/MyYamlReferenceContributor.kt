@@ -30,7 +30,7 @@ class MyYamlReferenceContributor : PsiReferenceContributor() {
     )
 }
 
-class ConstructorRef(val ctor: YAMLKeyValue) : PsiPolyVariantReferenceBase<YAMLKeyValue>(ctor) {
+class ConstructorRef(private val ctor: YAMLKeyValue) : PsiPolyVariantReferenceBase<YAMLKeyValue>(ctor) {
   //override fun resolve() = resolveToConstructor(element)
   /**
    * Return both the class declaration and its constructors
@@ -43,11 +43,11 @@ class ConstructorRef(val ctor: YAMLKeyValue) : PsiPolyVariantReferenceBase<YAMLK
   }
 }
 
-class ParamRef(val param: YAMLKeyValue) : PsiReferenceBase<YAMLKeyValue>(param) {
+class ParamRef(private val param: YAMLKeyValue) : PsiReferenceBase<YAMLKeyValue>(param) {
   override fun resolve() =
     resolveToParameter(param)
 }
 
-class IdRef(val id: YAMLPlainTextImpl) : PsiReferenceBase<YAMLPlainTextImpl>(id) {
-  override fun resolve() = resolveToObjectDef(id).first
+class IdRef(private val id: YAMLPlainTextImpl) : PsiReferenceBase<YAMLPlainTextImpl>(id) {
+  override fun resolve() = YamlAnnotator.ids[id.text]?.element
 }

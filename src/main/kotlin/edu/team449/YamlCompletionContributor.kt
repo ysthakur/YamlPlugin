@@ -65,12 +65,12 @@ class YamlCompletionContributor : CompletionContributor() {
     private fun allChildren(pkg: PsiPackage) =
       listOf<PsiElement>(*pkg.subPackages) + pkg.classes
 
-    fun allChildrenNames(pkg: PsiPackage) = allChildren(pkg).map { elem ->
+    fun allChildrenNames(pkg: PsiPackage) = allChildren(pkg).mapNotNull { elem ->
       when (elem) {
         is PsiClass -> elem.qualifiedName
         is PsiPackage -> elem.qualifiedName
         else -> null
       }
-    }.filterNotNull()
+    }
   }
 }
