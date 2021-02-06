@@ -4,7 +4,7 @@
     <vendor>The Blair Robot Project</vendor>
 
     <description>Checks YAML files for robot maps. Does a bit of code completion,
-        reference resolving/find usages, and checking parameters. Working on type checking</description>
+        reference resolving, find usages, and checking parameters. Working on type checking.</description>
 
     <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->

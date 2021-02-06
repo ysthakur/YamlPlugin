@@ -7,10 +7,7 @@ import com.intellij.codeInsight.completion.CompletionResultSet
 import com.intellij.codeInsight.completion.CompletionType.BASIC
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.patterns.PlatformPatterns
-import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiPackage
-import com.intellij.psi.PsiParameter
 import com.intellij.util.ProcessingContext
 import org.jetbrains.yaml.YAMLLanguage
 import org.jetbrains.yaml.YAMLTokenTypes
@@ -48,7 +45,7 @@ class YamlCompletionContributor : CompletionContributor() {
             if (constructorCall is YAMLKeyValue)
               classOf(constructorCall)?.let { cls ->
                 findConstructor(cls)?.let { ctor ->
-                  addElems(ctor.parameterList.parameters.map(PsiParameter::getName))
+                  addElems(ctor.parameterList.parameters.map { it.name })
                 }
               }
           }
@@ -58,19 +55,10 @@ class YamlCompletionContributor : CompletionContributor() {
   }
 
   companion object {
-    /**
-     * Return a list of all the classes and packages inside
-     * a certain package
-     */
-    private fun allChildren(pkg: PsiPackage) =
-      listOf<PsiElement>(*pkg.subPackages) + pkg.classes
-
-    fun allChildrenNames(pkg: PsiPackage) = allChildren(pkg).mapNotNull { elem ->
-      when (elem) {
-        is PsiClass -> elem.qualifiedName
-        is PsiPackage -> elem.qualifiedName
-        else -> null
-      }
+    fun allChildrenNames(pkg: PsiPackage): List<String> {
+      val children: MutableList<String> = pkg.classes.mapNotNull { it.qualifiedName }.toMutableList()
+      children.addAll(pkg.subPackages.map { it.qualifiedName })
+      return children
     }
   }
 }

@@ -5,15 +5,20 @@ import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.*
+import com.intellij.refactoring.suggested.startOffset
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
+import java.util.concurrent.ConcurrentHashMap
 
 //todo check that all the arguments' types are correct
 class YamlAnnotator : Annotator {
 
   override fun annotate(element: PsiElement, holder: AnnotationHolder) {
-    val prevMsg = elementsToAnnotate.remove(element)
-    if (prevMsg != null) {
+    //Remove all pointers to deleted elements
+    elementsToAnnotate.keys.removeAll { it.element == null }
+    val pointer = elementsToAnnotate.keys.find { it.element == element }
+    if (pointer != null) {
+      val prevMsg = elementsToAnnotate.remove(pointer)!!
       holder.newAnnotation(prevMsg.first, prevMsg.second).create()
     } else {
       if (element is YAMLKeyValue && element.key?.text?.matches(classNameRegex) == true) {
@@ -50,7 +55,7 @@ class YamlAnnotator : Annotator {
       idName == null || cls.qualifiedName!!.startsWith(wpiPackage),
       requiredParams.map { it.name },
       otherParams.map { it.name },
-      getAllArgs2(ctorCall)
+      getAllArgs(ctorCall)
     )
 
     /*val params = ctorDef.parameterList.parameters
@@ -138,17 +143,16 @@ class YamlAnnotator : Annotator {
     val pointer = ids[value.text]
     val ref = pointer?.element
     if (ref == null) {
-      addErrorAnnotation(value, "Could not find previous object with id ${value.text}, ids=$ids")
-      //It looks like the element it was referring to has been deleted
+      addErrorAnnotation(value, "Could not find previous object with id ${value.text}, ${pointer==null}")
+      //If the pointer is there but not the element, the element was deleted
       if (pointer != null) ids.remove(value.text)
+    } else if (ref.startOffset > value.startOffset) {
+      addErrorAnnotation(value, "Forward reference")
     }
-    //TODO check for forward references
-//    else if (ref.second) {
-//      addErrorAnnotation(value, "Illegal forward reference")
   }
 
   private fun addAnnotation(element: PsiElement, severity: HighlightSeverity, msg: String) {
-    elementsToAnnotate[element] = Pair(severity, msg)
+    elementsToAnnotate[SmartPointerManager.createPointer(element)] = Pair(severity, msg)
   }
 
   private fun addErrorAnnotation(element: PsiElement, msg: String) =
@@ -156,8 +160,10 @@ class YamlAnnotator : Annotator {
 
   companion object {
     val LOG: Logger = Logger.getInstance(this::class.java)
+
     //TODO Make the keys smart pointers to avoid memory leaks
-    private val elementsToAnnotate: MutableMap<PsiElement, Pair<HighlightSeverity, String>> = HashMap()
-    internal val ids: MutableMap<String, SmartPsiElementPointer<YAMLKeyValue>> = HashMap()
+    private val elementsToAnnotate: MutableMap<SmartPsiElementPointer<PsiElement>, Pair<HighlightSeverity, String>> =
+      ConcurrentHashMap()
+    internal val ids: MutableMap<String, SmartPsiElementPointer<YAMLKeyValue>> = ConcurrentHashMap()
   }
 }

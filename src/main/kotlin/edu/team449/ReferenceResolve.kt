@@ -1,6 +1,5 @@
 package edu.team449
 
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
@@ -9,20 +8,15 @@ import edu.team449.RobotStuff.robotClass
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLBlockSequenceImpl
-import org.jetbrains.yaml.psi.impl.YAMLMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 
-//import kotlin.concurrent.thread
-
-const val classNameRegexStr = """([A-Za-z_][A-Za-z_0-9]*\.)+[A-Za-z_][A-Za-z_0-9]*"""
-val classNameMaybeDot = Regex("""[A-Za-z_][A-Za-z_0-9]*(\.[A-Za-z_][A-Za-z_0-9]*)*?(\.[A-Za-z_]?)?""")
-val classNameDotRegex = Regex("$classNameRegexStr\\.")
-val classNameRegex = Regex(classNameRegexStr)
+const val identifierRegexStr = """[A-Za-z_][A-Za-z_0-9]*"""
+const val classNameRegexStr = """(${identifierRegexStr}\.)+$identifierRegexStr"""
 const val robotPkgName = "org.usfirst.frc.team449.robot"
 const val wpiPackage = "edu.wpi"
-val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
-
-val LOG = Logger.getInstance(object {}.javaClass)
+const val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
+val classNameMaybeDot = Regex("""($identifierRegexStr\.)+($identifierRegexStr)?""")//Regex("""[A-Za-z_][A-Za-z_0-9]*(\.[A-Za-z_][A-Za-z_0-9]*)*?(\.[A-Za-z_]?)?""")
+val classNameRegex = Regex(classNameRegexStr)
 
 object RobotStuff {
   private var robotClasses: MutableMap<Project, PsiClass> = mutableMapOf()
@@ -40,27 +34,13 @@ object RobotStuff {
  */
 fun resolveRef(element: PsiElement): PsiElement? =
   when (element) {
-    is YAMLPlainTextImpl ->
-      YamlAnnotator.ids[element.text]?.element ?: resolveToIdDecl(element) ?: resolveToObjectDef(
-        element
-      ).first?.let(::resolveRef)
+    is YAMLPlainTextImpl -> resolveToIdDecl(element)
     is YAMLKeyValue -> resolveToClass(element) ?: resolveToParameter(element)
     else -> element
   }
 
-fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? {
-  val file = idRef.containingFile
-  return findElementLinearly(file) { elem ->
-    //val cls = elem.javaClass
-    //val text = elem.text
-    if (elem.parent !is YAMLKeyValue || elem !is YAMLMappingImpl || elem !is YAMLKeyValue) {
-      false
-    } else {
-      //Logger.getInstance(MyYamlAnnotator::class.java).warn("Value is ${elem.valueText}")
-      elem.valueText == idRef.text
-    }
-  } as YAMLKeyValue?
-}
+fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? =
+  YamlAnnotator.ids[idRef.text]?.element
 
 /**
  * Resolves a plaintext value to an object of that id, and also gives
@@ -69,20 +49,20 @@ fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? {
  * @return The object/constructor call this refers to (null if not found)
  *         and a boolean (true if it is a forward reference, false otherwise)
  */
-fun resolveToObjectDef(idArg: YAMLPlainTextImpl): Pair<YAMLKeyValue?, Boolean> {
-  val file = idArg.containingFile
-  var forwardRef = false
-  return findElementLinearly(file) { elem ->
-    if (elem == idArg) forwardRef = true
-
-    elem is YAMLKeyValue && getIdValue(elem)?.let { it == idArg.text } ?: false
-  } as YAMLKeyValue? to forwardRef
-}
+//fun resolveToObjectDef(idArg: YAMLPlainTextImpl): Pair<YAMLKeyValue?, Boolean> {
+//  val file = idArg.containingFile
+//  var forwardRef = false
+//  return findElementLinearly(file) { elem ->
+//    if (elem == idArg) forwardRef = true
+//
+//    elem is YAMLKeyValue && getIdValue(elem)?.let { it == idArg.text } ?: false
+//  } as YAMLKeyValue? to forwardRef
+//}
 
 fun getIdValue(constructorCall: YAMLKeyValue): String? {
   val cls = resolveToClass(constructorCall) ?: return null
   val idStr = getIdName(cls) ?: return null
-  return getAllArgs2(constructorCall).find { (name, _) -> removeQuotes(name) == idStr }?.first
+  return getAllArgs(constructorCall).find { (name, _) -> removeQuotes(name) == idStr }?.first
 }
 
 /*fun getIdArg(args: Iterable<YAMLKeyValue>, constructorCall: YAMLKeyValue): YAMLKeyValue? {
@@ -107,13 +87,13 @@ fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
  * @param pred the predicate used to determine if the element has
  * been found
  */
-fun findElementLinearly(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? {
-  for (child in parent.children) {
-    return if (pred(child)) child
-    else findElementLinearly(child, pred) ?: continue
-  }
-  return null
-}
+//fun findElementLinearly(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? {
+//  for (child in parent.children) {
+//    return if (pred(child)) child
+//    else findElementLinearly(child, pred) ?: continue
+//  }
+//  return null
+//}
 
 /**
  * This apparently doesn't work because it's in a different thread
@@ -192,6 +172,7 @@ fun classOf(keyValue: YAMLKeyValue): PsiClass? =
     resolveToParameter(keyValue)?.let { PsiTypesUtil.getPsiClass(it.type) }
 
 /**
+ * TODO work on this
  * Whether or not the argument in the YAML file matches
  * the parameter's type
  */

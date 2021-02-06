@@ -1,13 +1,14 @@
 package edu.team449
 
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiParameter
-import org.jetbrains.yaml.psi.*
+import org.jetbrains.yaml.psi.YAMLDocument
+import org.jetbrains.yaml.psi.YAMLKeyValue
+import org.jetbrains.yaml.psi.YAMLMapping
+import org.jetbrains.yaml.psi.YAMLValue
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
-import org.jetbrains.yaml.psi.impl.YAMLBlockMappingImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 import org.jetbrains.yaml.resolve.YAMLAliasReference
 
@@ -20,14 +21,6 @@ const val LIST_CLASS_SIMPLE_NAME = "List"
 const val VALID_IDENTIFIER_REGEX_STR = """[A-Za-z_$][A-Za-z0-9_$]*"""
 val TYPE_ACCEPTING_SINGLE_TYPE_PARAMETER_REGEX =
   Regex("$VALID_IDENTIFIER_REGEX_STR(\\W*\\.\\W*$VALID_IDENTIFIER_REGEX_STR)*\\W*<\\W*$VALID_IDENTIFIER_REGEX_STR\\W*>")
-
-//typealias ArgKey = Pair<String, YAMLPsiElement>
-//typealias ArgumentList = Map<ArgKey, YAMLValue>
-
-//val ArgKey.argName
-//  get() = this.first
-//val ArgKey.elem
-//  get() = this.second
 
 fun removeQuotes(s: String) = s.removeSurrounding("\"").removeSurrounding("'")
 
@@ -89,6 +82,7 @@ fun needsIdAnnotation(cls: PsiClass): Boolean =
   if (cls.qualifiedName!!.startsWith(wpiPackage)) false
   else getIdName(cls) == null
 
+//TODO work on this
 fun isTopLevel(keyVal: YAMLKeyValue): Boolean = keyVal.parent?.parent is YAMLDocument
 
 /**
@@ -142,53 +136,7 @@ fun anchorValue(alias: YAMLAliasImpl): YAMLValue? = YAMLAliasReference(alias).re
  * Does not guarantee that all the `YAMLKeyValue`'s will have
  * `constructorCall` as their parent
  */
-fun getAllArgs(constructorCall: YAMLKeyValue): List<YAMLKeyValue> {
-  val value = constructorCall.value
-  val default = emptyList<YAMLKeyValue>()
-  return when (value) {
-    is YAMLMapping -> {
-//      val argsMap = mutableMapOf<YAMLPsiElement, YAMLKeyValue>()
-      val args = mutableListOf<YAMLKeyValue>()
-      fun add(kv: YAMLKeyValue) {
-        val ind = args.indexOfFirst { it.keyText == kv.keyText }
-        if (ind == -1) args.add(kv)
-        else args[ind] = kv
-      }
-      for (keyVal in value.keyValues) {
-        if (keyVal.keyText == "<<") {
-//          LOG.warn("${keyVal is YAMLAliasImpl}")
-          val keyValue = keyVal.value
-          if (keyValue is YAMLAliasImpl) {
-//            LOG.warn("Yes! $keyVal is YAMLAlias!")
-            val ref = YAMLAliasReference(keyValue)
-            val other = ref.resolve()?.markedValue?.parent
-            if (other is YAMLKeyValue) {
-              val otherArgs = getAllArgs(other)
-              for (kv2 in otherArgs) add(kv2)
-            } else {
-              LOG.warn("NO!! $other is not a keyvalue! ${keyVal.valueText}")
-              return default
-            }
-          } else {
-            LOG.warn("No!!! ${keyValue?.textRange} is not an alias!")
-          }
-        } else add(keyVal)
-      }
-
-      args
-    }
-    is YAMLPlainTextImpl -> resolveToObjectDef(value).first?.let(::getAllArgs) ?: default
-    else -> default
-  }
-}
-
-/**
- * Get all the arguments that this constructor has, including ones
- * copied using aliases/anchors.
- * Does not guarantee that all the `YAMLKeyValue`'s will have
- * `constructorCall` as their parent
- */
-fun getAllArgs2(constructorCall: YAMLKeyValue): List<Pair<String, YAMLKeyValue>> {
+fun getAllArgs(constructorCall: YAMLKeyValue): List<Pair<String, YAMLKeyValue>> {
   val value = constructorCall.value
   val default = listOf<Pair<String, YAMLKeyValue>>()
   return when (value) {
@@ -199,13 +147,9 @@ fun getAllArgs2(constructorCall: YAMLKeyValue): List<Pair<String, YAMLKeyValue>>
         if (arg1?.keyText == "<<") {
           when (val alias = arg1.value) {
             is YAMLAliasImpl ->
-              Pair(keyValues.drop(1), getAllArgs2(anchorValue(alias)!!.parent as YAMLKeyValue))
-            else -> {
-              LOG.error("Element at textRange ${alias?.textRange} is not an alias")
-              TODO()
-            }
+              Pair(keyValues.drop(1), getAllArgs(anchorValue(alias)!!.parent as YAMLKeyValue))
+            else -> TODO("Element at textRange ${alias?.textRange} is not an alias")
           }
-
         } else {
           Pair(keyValues, default)
         }
@@ -217,7 +161,7 @@ fun getAllArgs2(constructorCall: YAMLKeyValue): List<Pair<String, YAMLKeyValue>>
       }
       args + inherited.filter { (name, _) -> !args.any { it.first == name } }
     }
-    is YAMLPlainTextImpl -> YamlAnnotator.ids[value.text]?.let { it.element?.let(::getAllArgs2) } ?: default
+    is YAMLPlainTextImpl -> YamlAnnotator.ids[value.text]?.let { it.element?.let(::getAllArgs) } ?: default
     else -> default
   }
 }
