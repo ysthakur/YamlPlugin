@@ -20,7 +20,7 @@ class MyYamlReferenceContributor : PsiReferenceContributor() {
           when (element) {
             is YAMLKeyValue ->
               arrayOf(
-                if (isConstructorCall(element)) ConstructorRef(element) //It's a constructor call
+                if (isQualifiedConstructorCall(element)) ConstructorRef(element) //It's a constructor call
                 else ParamRef(element) //otherwise, it's an argument/reference to a parameter
               )
             is YAMLPlainTextImpl -> arrayOf(IdRef(element))
@@ -49,5 +49,5 @@ class ParamRef(private val param: YAMLKeyValue) : PsiReferenceBase<YAMLKeyValue>
 }
 
 class IdRef(private val id: YAMLPlainTextImpl) : PsiReferenceBase<YAMLPlainTextImpl>(id) {
-  override fun resolve() = YamlAnnotator.ids[id.text]?.element
+  override fun resolve() = YamlAnnotator.getIds(id.project)[id.text]?.element
 }

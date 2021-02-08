@@ -4,89 +4,152 @@ import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
 import com.intellij.psi.*
+import com.intellij.psi.impl.source.tree.LeafPsiElement
+import com.intellij.psi.util.PsiTypesUtil
 import com.intellij.refactoring.suggested.startOffset
-import org.jetbrains.yaml.psi.YAMLKeyValue
+import org.jetbrains.yaml.psi.*
+import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 import java.util.concurrent.ConcurrentHashMap
 
 //todo check that all the arguments' types are correct
 class YamlAnnotator : Annotator {
 
-  override fun annotate(element: PsiElement, holder: AnnotationHolder) {
-    //Remove all pointers to deleted elements
-    elementsToAnnotate.keys.removeAll { it.element == null }
-    val pointer = elementsToAnnotate.keys.find { it.element == element }
-    if (pointer != null) {
-      val prevMsg = elementsToAnnotate.remove(pointer)!!
-      holder.newAnnotation(prevMsg.first, prevMsg.second).create()
-    } else {
-      if (element is YAMLKeyValue && element.key?.text?.matches(classNameRegex) == true) {
-        val value = element.value
-        //This means that it is merely a reference to another object
-        if (value is YAMLPlainTextImpl) checkReference(value)
-        else
-          resolveToClass(element)?.let { cls -> //If it's not null, it's a constructor call
-            findConstructor(cls)?.let { checkCtorCall(it, element, cls) } ?: addErrorAnnotation(
-              element.key!!,
-              "Could not find a constructor for class ${cls.name}"
-            )
-          } ?: addErrorAnnotation(
-            element.key!!,
-            if (resolveToPackage(element.key!!.text, element.project) != null)
-              "${element.key!!.text} is a package, not a class"
-            else
-              "Could not find ${element.key!!.text}"
-          )
+  override fun annotate(elem: PsiElement, holder: AnnotationHolder) {
+    //TODO figure out why this was causing a memory leak
+//    val project = elem.project
+//    if (project !in allIds.keys) {
+//      allIds[project] = ConcurrentHashMap()
+//      val listener = ChangeListener(project)
+//      PsiManager.getInstance(project)
+//        .addPsiTreeChangeListener(listener) { PsiManager.getInstance(project).removePsiTreeChangeListener(listener) }
+//    }
+
+    val parent = elem.parent
+    val element = if (elem is YAMLAliasImpl) anchorValue(elem) else elem
+    if (parent is YAMLKeyValue) {
+      if (element is YAMLPlainTextImpl && element == parent.value) {
+        //It's a value, not a key
+        checkPlaintext(element, parent, classOf(parent), holder)
+      } else if (element is LeafPsiElement && element == parent.key) {
+        if (element.text.matches(classNameWithDotMaybeIncomplete)) {
+          //element.text is the name of a class, not a parameter
+          checkQualifiedCtorCall(parent, element.text, holder)
+        } else if (element.text != "<<") {
+          checkArgument(parent, element.text, holder)
+        }
       }
     }
   }
 
-  private fun checkCtorCall(ctorDef: PsiMethod, ctorCall: YAMLKeyValue, cls: PsiClass) {
-    val params = ctorDef.parameterList.parameters
+  /**
+   * Check an argument where the name of a parameter has been given
+   */
+  private fun checkArgument(arg: YAMLKeyValue, keyText: String, holder: AnnotationHolder) {
+    val argType = typeOf(arg)
 
-    val (requiredParams, otherParams) = params.partition(::isRequiredParam)
-    val idName = getIdName(cls)
+    //Check if such a parameter exists only if it's not part of a Map
+    if (arg.parent?.firstChild !is LeafPsiElement && arg.parent?.firstChild?.text != "!!map")
+      checkArg(arg, holder)
 
-    checkArgs(
-      ctorCall,
-      ctorCall.key,
-      idName,
-      idName == null || cls.qualifiedName!!.startsWith(wpiPackage),
-      requiredParams.map { it.name },
-      otherParams.map { it.name },
-      getAllArgs(ctorCall)
-    )
+    if (argType == null) {
+      val upperCtor = getUpperConstructorCall(arg)
+      val clazz = upperCtor?.let(::classOf)
+      val idKey = clazz?.let(::getIdName)
 
-    /*val params = ctorDef.parameterList.parameters
+      if (idKey == removeQuotes(keyText)) {
+        val ids = getIds(arg.project)
+        ids[arg.valueText] = SmartPointerManager.createPointer(arg.value!!)
+      }
+//      else
+//        addWarning(holder, "Type of $keyText unknown")
+    } else {
+      /*Make sure it doesn't look like this (constructor call under parameter)
+      foo:
+        org.foo.blah:
+          key: val
+          key2: val2
+      */
+      val isCtorCall =
+        when (val value = arg.value) {
+          is YAMLMapping -> {
+            val keyVals = value.keyValues
+            !(keyVals.size == 1 && keyVals.iterator().next().keyText.matches(classNameWithDotMaybeIncomplete))
+          }
+          else -> false
+        }
+      if (isCtorCall) {
+        val argClass = PsiTypesUtil.getPsiClass(argType)!!
+        //It's a constructor call, so check it
+        val args = getAllArgs(arg)
+        val ctor = findConstructor(argClass)
 
-    val args = getAllArgs(ctorCall)
-    val idName = getIdName(cls)
+        //Check that all parameters have been given
+        if (ctor != null) {
+          checkParams(args, ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name }, holder)
+        }
 
-    val givenParams = mutableSetOf<PsiParameter>()
-
-    //initialised to true if idName is null, i.e., there is no id
-    var foundId: Boolean = idName == null
-
-    for (argKey in args) {
-      val argName = removeQuotes(argKey.keyText)
-      if (argName == idName) foundId = true
-      else params.find { it.name == argName }?.let { param ->
-        if (param in givenParams) addErrorAnnotation(argKey, "Duplicate argument for property ${param.name}")
-        else givenParams += param
-      } ?: addErrorAnnotation(
-        argKey.key!!,
-        "Could not find a parameter named $argName"
-      )
+        //Check that the id is given
+        val (idName, needsId) = getAndNeedsId(argClass)
+        if (idName != null) {
+          //If the id isn't found but it's required, mark an error
+          if (needsId && args.all { removeQuotes(it.first) != idName }) {
+            addError(holder, "Id $idName not given")
+          }
+        }
+      }
     }
+  }
 
-    if (!foundId) addErrorAnnotation(ctorCall.key!!, "Id property $idName not given")
+//  private fun OLDcheckCtorCall(ctorDef: PsiMethod, ctorCall: YAMLKeyValue, cls: PsiClass) {
+//    val params = ctorDef.parameterList.parameters
+//
+//    val (requiredParams, otherParams) = params.partition(::isRequiredParam)
+//    val idName = getIdName(cls)
+//
+//    checkArgs(
+//      ctorCall,
+//      ctorCall.key,
+//      idName,
+//      idName == null || cls.qualifiedName!!.startsWith(wpiPackage),
+//      requiredParams.map { it.name },
+//      otherParams.map { it.name },
+//      getAllArgs(ctorCall)
+//    )
+//  }
 
-    //Check that all the parameters have been entered in
-    for (param in params.filter { isRequiredParam(it) && it !in givenParams }) addErrorAnnotation(
-      ctorCall.key!!,
-      "No argument given for required property ${param.name}"
-    )*/
+  /**
+   * Check if such a parameter exists. If it's the id parameter, add it to the map of ids
+   */
+  private fun checkArg(arg: YAMLKeyValue, holder: AnnotationHolder) {
+    val argName = removeQuotes(arg.keyText)
+    if (argName != "<<" && resolveToParameter(arg) == null) {
+      val idName = getIdName(getUpperConstructorCall(arg)?.let(::classOf) ?: RobotStuff.robotClass(arg.project))
+      //If it's not one of the parameters, and it's not the id, mark a warning
+      if (idName != argName) {
+        //TODO should this be an error?
+        addWarning(holder, "No such parameter: ${argName}")
+      } else {
+//        ids[arg.valueText] = SmartPointerManager.createPointer(arg.parent.parent as YAMLKeyValue)
+      }
+    }
+  }
+
+  /**
+   * Check if all parameters are given
+   */
+  private fun checkParams(
+    args: List<Pair<String, YAMLKeyValue>>,
+    requiredParams: List<String>,
+    holder: AnnotationHolder
+  ) {
+    for (param in requiredParams) {
+      if (!args.any { it.first == param }) {
+        addError(holder, "Parameter $param not given")
+      }
+    }
   }
 
   /**
@@ -98,72 +161,194 @@ class YamlAnnotator : Annotator {
    * @param otherParams The names of the non-required parameters
    * @param args The actual arguments given that need to be checked
    */
-  private fun checkArgs(
-    ctorCall: YAMLKeyValue,
-    parent: PsiElement?,
-    idName: String?,
-    isIdRequired: Boolean,
-    requiredParams: List<String>,
-    otherParams: List<String>,
-    args: List<Pair<String, YAMLKeyValue>>
+//  private fun checkArgs(
+//    ctorCall: YAMLKeyValue,
+//    parent: PsiElement?,
+//    idName: String?,
+//    isIdRequired: Boolean,
+//    requiredParams: List<String>,
+//    otherParams: List<String>,
+//    args: List<Pair<String, YAMLKeyValue>>
+//  ) {
+//    val givenParams = mutableSetOf<String>()
+//    var foundId = isIdRequired || idName == null
+//
+//    for ((keyText, keyVal) in args) {
+//      val argName = removeQuotes(keyText)
+//      if (argName == idName) {
+//        foundId = true
+//        ids[keyVal.valueText] = SmartPointerManager.createPointer(ctorCall)
+//      } else if (argName in requiredParams || argName in otherParams) {
+//        if (argName in givenParams) addErrorAnnotation(keyVal, "Duplicate argument for property $argName")
+//        else givenParams += argName
+//      } else {
+//        addErrorAnnotation(
+//          keyVal.key!!,
+//          "Could not find a parameter named $argName"
+//        )
+//      }
+//    }
+//
+//    if (parent != null) {
+//      if (!foundId) addErrorAnnotation(parent, "No argument given for id parameter $idName")
+//      //Check that all the parameters have been entered in
+//      for (param in requiredParams) if (param !in givenParams) addErrorAnnotation(
+//        parent,
+//        "No argument given for required property $param"
+//      )
+//    }
+//  }
+
+  //TODO implement this
+  private fun checkPlaintext(
+    element: YAMLPlainTextImpl,
+    keyValue: YAMLKeyValue,
+    clazz: PsiClass?,
+    holder: AnnotationHolder
   ) {
-    val givenParams = mutableSetOf<String>()
-    var foundId = isIdRequired || idName == null
+    if (element.firstChild !is YAMLAnchor) {
+      val text = element.text
+      if (keyValue.keyText.matches(classNameWithDotMaybeIncomplete)) {
+        val ref = findById(text, element.project)
+        if (ref == null) {
+          addError(
+            holder,
+            "Could not find previous object with id ${text}"
+          )
+        } else if (ref.startOffset > element.startOffset) {
+          addWarning(holder, "Forward reference")
+        }
+      } else if (text.matches(VALID_IDENTIFIER_REGEX)) {
+        if (text == "true" || text == "false") {
 
-    for ((keyText, keyVal) in args) {
-      val argName = removeQuotes(keyText)
-      if (argName == idName) {
-        foundId = true
-        ids[keyVal.valueText] = SmartPointerManager.createPointer(ctorCall)
-      } else if (argName in requiredParams || argName in otherParams) {
-        if (argName in givenParams) addErrorAnnotation(keyVal, "Duplicate argument for property $argName")
-        else givenParams += argName
-      } else {
-        addErrorAnnotation(
-          keyVal.key!!,
-          "Could not find a parameter named $argName"
-        )
+        } else if (clazz?.isEnum == true) {
+
+        } else {
+
+        }
+      } else { //has to be a number (or string?)
+
       }
-    }
-
-    if (parent != null) {
-      if (!foundId) addErrorAnnotation(parent, "No argument given for id parameter $idName")
-      //Check that all the parameters have been entered in
-      for (param in requiredParams) if (param !in givenParams) addErrorAnnotation(
-        parent,
-        "No argument given for required property $param"
-      )
     }
   }
 
   /**
-   * Check if a reference is invalid
+   * Check a constructor call where the class's name has been given
    */
-  private fun checkReference(value: YAMLPlainTextImpl) {
-    val pointer = ids[value.text]
-    val ref = pointer?.element
-    if (ref == null) {
-      addErrorAnnotation(value, "Could not find previous object with id ${value.text}, ${pointer==null}")
-      //If the pointer is there but not the element, the element was deleted
-      if (pointer != null) ids.remove(value.text)
-    } else if (ref.startOffset > value.startOffset) {
-      addErrorAnnotation(value, "Forward reference")
+  private fun checkQualifiedCtorCall(parent: YAMLKeyValue, keyText: String, holder: AnnotationHolder) {
+    //If it's got a dot in it, it's a class or package
+    val argClass = resolveToClass(keyText, parent.project)
+
+    if (argClass == null) {
+      addError(holder, "No such class $keyText")
+    } else {
+      val isCtorCall = parent.value is YAMLMapping
+      if (isCtorCall) {
+        //It's a constructor call, so check it
+        val args = getAllArgs(parent)
+        val ctor = findConstructor(argClass)
+
+        //Check that all parameters have been given
+        if (ctor != null)
+          checkParams(args, ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name }, holder)
+        else
+          addWarning(holder, "No constructor found for class $keyText")
+
+        //Check that the id is given
+        val (idName, needsId) = getAndNeedsId(argClass)
+        if (idName != null) {
+          //If the id isn't found but it's required, mark an error
+          if (needsId && args.all { removeQuotes(it.first) != idName }) {
+            addError(holder, "Id $idName not given")
+          }
+        }
+      }
     }
   }
 
-  private fun addAnnotation(element: PsiElement, severity: HighlightSeverity, msg: String) {
-    elementsToAnnotate[SmartPointerManager.createPointer(element)] = Pair(severity, msg)
-  }
+  private fun addAnnotation(holder: AnnotationHolder, severity: HighlightSeverity, msg: String) =
+    holder.newAnnotation(severity, msg).create()
 
-  private fun addErrorAnnotation(element: PsiElement, msg: String) =
-    addAnnotation(element, HighlightSeverity.ERROR, msg)
+  private fun addError(holder: AnnotationHolder, msg: String) =
+    addAnnotation(holder, HighlightSeverity.ERROR, msg)
+
+  private fun addWarning(holder: AnnotationHolder, msg: String) =
+    addAnnotation(holder, HighlightSeverity.WARNING, msg)
 
   companion object {
     val LOG: Logger = Logger.getInstance(this::class.java)
 
-    //TODO Make the keys smart pointers to avoid memory leaks
-    private val elementsToAnnotate: MutableMap<SmartPsiElementPointer<PsiElement>, Pair<HighlightSeverity, String>> =
+    private val allIds: MutableMap<Project, MutableMap<String, SmartPsiElementPointer<PsiElement>>> =
       ConcurrentHashMap()
-    internal val ids: MutableMap<String, SmartPsiElementPointer<YAMLKeyValue>> = ConcurrentHashMap()
+
+    fun getIds(project: Project): MutableMap<String, SmartPsiElementPointer<PsiElement>> =
+      allIds[project] ?: run {
+        val newIds = ConcurrentHashMap<String, SmartPsiElementPointer<PsiElement>>()
+        allIds[project] = newIds
+        newIds
+      }
+
+    fun findById(id: String, project: Project): YAMLKeyValue? {
+      val ids = getIds(project)
+      return ids[id]?.let { ptr ->
+        val ref = ptr.element
+        if (ref == null || ref.text != id) {
+          ids.remove(id)
+          LOG.warn("Yay, removed id $id!")
+        }
+        ref?.parent?.parent?.parent as YAMLKeyValue?
+      }
+    }
+  }
+
+  class ChangeListener(project: Project) : PsiTreeChangeListener {
+    override fun beforeChildAddition(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun beforeChildRemoval(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun beforeChildReplacement(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun beforeChildMovement(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun beforeChildrenChange(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun beforePropertyChange(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun childAdded(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun childRemoved(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun childReplaced(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun childrenChanged(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun childMoved(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
+    override fun propertyChanged(event: PsiTreeChangeEvent) {
+      //TODO("Not yet implemented")
+    }
+
   }
 }

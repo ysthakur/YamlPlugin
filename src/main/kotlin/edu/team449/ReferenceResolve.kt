@@ -3,9 +3,10 @@ package edu.team449
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.util.PsiTypesUtil
 import edu.team449.RobotStuff.robotClass
+import edu.team449.YamlAnnotator.Companion.LOG
 import org.jetbrains.yaml.psi.YAMLKeyValue
+import org.jetbrains.yaml.psi.YAMLSequence
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLBlockSequenceImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
@@ -15,7 +16,8 @@ const val classNameRegexStr = """(${identifierRegexStr}\.)+$identifierRegexStr""
 const val robotPkgName = "org.usfirst.frc.team449.robot"
 const val wpiPackage = "edu.wpi"
 const val ROBOT_MAP_QUALIFIED_NAME = "$robotPkgName.RobotMap"
-val classNameMaybeDot = Regex("""($identifierRegexStr\.)+($identifierRegexStr)?""")//Regex("""[A-Za-z_][A-Za-z_0-9]*(\.[A-Za-z_][A-Za-z_0-9]*)*?(\.[A-Za-z_]?)?""")
+val classNameWithDotMaybeIncomplete =
+  Regex("""($identifierRegexStr\.)+($identifierRegexStr)?""")//Regex("""[A-Za-z_][A-Za-z_0-9]*(\.[A-Za-z_][A-Za-z_0-9]*)*?(\.[A-Za-z_]?)?""")
 val classNameRegex = Regex(classNameRegexStr)
 
 object RobotStuff {
@@ -40,7 +42,7 @@ fun resolveRef(element: PsiElement): PsiElement? =
   }
 
 fun resolveToIdDecl(idRef: YAMLPlainTextImpl): YAMLKeyValue? =
-  YamlAnnotator.ids[idRef.text]?.element
+  YamlAnnotator.findById(idRef.text, idRef.project)
 
 /**
  * Resolves a plaintext value to an object of that id, and also gives
@@ -125,7 +127,7 @@ fun findElement(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? 
  * Find the class whose constructor/JsonCreator is being called
  */
 fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
-  resolveToClass(constructorCall.keyText, constructorCall.project)
+  getRealKeyText(constructorCall)?.let { resolveToClass(it, constructorCall.project) }
 
 /**
  * If the input is an alias, it keeps trying to find the
@@ -135,13 +137,54 @@ fun getRealValue(element: PsiElement): PsiElement? =
   if (element is YAMLAliasImpl) anchorValue(element)?.let(::getRealValue)
   else element
 
+fun getRealKeyText(element: YAMLKeyValue): String? =
+  when (val key = getRealValue(element.key!!)) {
+    is YAMLKeyValue -> key.keyText
+    else -> key?.text ?: run {
+      TODO("real value for ${element.keyText} is null. uh oh")
+    }
+  }
+
 fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
-  val upperConst = getUpperConstructorCall(arg)
-  val clazz = upperConst?.let(::classOf) ?: robotClass(arg.project)
-  //Make sure it's not an alias, resolve to the real value
-  val paramName = arg.key?.let(::getRealValue)?.text
-  return clazz.let { cls -> paramName?.let { findConstructor(cls)?.findParam(it) } }
+  val clazz =
+    if (isTopLevel(arg))
+      robotClass(arg.project)
+    else
+      when (val seq = arg.parent?.parent?.parent) {
+        is YAMLSequence ->
+          typeOfItems(seq)?.let(::psiTypeToClass)
+        else ->
+          getUpperConstructorCall(arg)?.let(::classOf)
+      }
+  return clazz?.let { resolveToParameter(arg, it) }
 }
+
+fun resolveToParameter(arg: YAMLKeyValue, clazz: PsiClass): PsiParameter? {
+  //Make sure it's not an alias, resolve to the real value
+  val paramName = getRealKeyText(arg)
+  val res = paramName?.let { findConstructor(clazz)?.findParam(it) }
+//  if (res == null) LOG.error("Could not resolve ${paramName}, ${arg.keyText}")
+  return res
+}
+
+fun typeOfItems(seq: YAMLSequence): PsiType? =
+  when (val arg = seq.parent) {
+    is YAMLKeyValue -> {
+      val paramType = typeOf(arg)
+      if (paramType is PsiClassType && paramType.className == "List")
+        paramType.parameters[0]
+      else {
+//        LOG.error("keyvalue failed ${arg.keyText}")
+//        TODO()
+        null
+      }
+    }
+    else -> {
+//      LOG.error("Not a keyvalue ${arg.text}")
+//      TODO()
+      null
+    }
+  }
 
 /**
  * Find ALL the constructors in the given class usable by
@@ -166,42 +209,75 @@ fun findConstructor(cls: PsiClass): PsiMethod? = allYAMLConstructors(cls).firstO
  * name
  */
 fun classOf(keyValue: YAMLKeyValue): PsiClass? =
-  if (isConstructorCall(keyValue))
+  if (isQualifiedConstructorCall(keyValue)) {
     resolveToClass(keyValue)
+  } else {
+    typeOf(keyValue)?.let(::psiTypeToClass)
+  }
+
+/**
+ * Return the Java class that the key constructs
+ * If the class is not explicitly stated, uses the
+ * type of the parameter of the parent with the same
+ * name
+ */
+fun typeOf(keyValue: YAMLKeyValue): PsiType? =
+  if (isQualifiedConstructorCall(keyValue))
+    resolveToClass(keyValue)?.let(::psiClassToType) ?: run{
+      LOG.warn("class not found ${keyValue.keyText}")
+      null
+    }
   else
-    resolveToParameter(keyValue)?.let { PsiTypesUtil.getPsiClass(it.type) }
+    when (val greatGrandParent = keyValue.parent?.parent?.parent) {
+      is YAMLSequence -> {
+//        YamlAnnotator.LOG.warn("Found YAML sequence ${keyValue.keyText}!!!")
+        typeOfItems(greatGrandParent)?.let { outer ->
+          psiTypeToClass(outer)?.let {
+            resolveToParameter(
+              keyValue,
+              it
+            )?.type
+          }
+        }
+      }
+      else -> resolveToParameter(keyValue)?.type ?: run{
+//        LOG.error("cannot resolve paramter ${keyValue.keyText}, istoplevel=${isTopLevel(keyValue)}")
+//        TODO()
+        null
+      }
+    }
 
 /**
  * TODO work on this
  * Whether or not the argument in the YAML file matches
  * the parameter's type
  */
-fun matchesType(arg: YAMLKeyValue, param: PsiParameter) = matchesType(arg, param.type.canonicalText)
+//fun matchesType(arg: YAMLKeyValue, param: PsiParameter) = matchesType(arg, param.type.canonicalText)
 
 /**
  * Whether or not the argument in a YAML file is of the given type
  */
-fun matchesType(arg: YAMLKeyValue, className: String): Boolean {
-  if (isCollectionClass(className)) {
-    val list = arg.value
-    //This means it's a list
-    if (list is YAMLBlockSequenceImpl && hasSingleTypeParameter(className)) {
-      val innerType = extractTypeArgument(className)
-      for (item in list.items) {
-        if (item.value != null) {
-          val value =
-            anchorIfAliasNullIfWrongTypeElseSame<YAMLKeyValue>(item.value!!)
-          if (value == null || !matchesType(value, innerType)) return false
-        }
-      }
-      return true
-    } else return false //Because it should be a list
-  } else {
-    return classOf(arg)?.let {
-      it.qualifiedName == className.replaceAfter('<', "")
-    } ?: false
-  }
-}
+//fun matchesType(arg: YAMLKeyValue, className: String): Boolean {
+//  if (isCollectionClass(className)) {
+//    val list = arg.value
+//    //This means it's a list
+//    if (list is YAMLBlockSequenceImpl && hasSingleTypeParameter(className)) {
+//      val innerType = extractTypeArgument(className)
+//      for (item in list.items) {
+//        if (item.value != null) {
+//          val value =
+//            anchorIfAliasNullIfWrongTypeElseSame<YAMLKeyValue>(item.value!!)
+//          if (value == null || !matchesType(value, innerType)) return false
+//        }
+//      }
+//      return true
+//    } else return false //Because it should be a list
+//  } else {
+//    return classOf(arg)?.let {
+//      it.qualifiedName == className.replaceAfter('<', "")
+//    } ?: false
+//  }
+//}
 
 /**
  * Helpful method to find a class by name

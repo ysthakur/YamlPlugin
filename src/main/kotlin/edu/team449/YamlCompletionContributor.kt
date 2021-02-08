@@ -12,6 +12,9 @@ import com.intellij.util.ProcessingContext
 import org.jetbrains.yaml.YAMLLanguage
 import org.jetbrains.yaml.YAMLTokenTypes
 import org.jetbrains.yaml.psi.YAMLKeyValue
+import org.jetbrains.yaml.psi.YAMLSequence
+import org.jetbrains.yaml.psi.YAMLSequenceItem
+import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 
 class YamlCompletionContributor : CompletionContributor() {
 
@@ -29,6 +32,7 @@ class YamlCompletionContributor : CompletionContributor() {
             elems.forEach { elem -> resultSet.addElement(LookupElementBuilder.create(elem)) }
 
           resultSet.addElement(LookupElementBuilder.create("org.usfirst.frc.team449.robot"))
+          resultSet.addElement(LookupElementBuilder.create("YAML is far superior to JSON. I dare you to say otherwise."))
 
           val element = parameters.position
           val project = element.project
@@ -36,19 +40,43 @@ class YamlCompletionContributor : CompletionContributor() {
           //Some idiot put in IntellijIdeaRulezzz into the text
           val text = element.text.replaceFirst(ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS, "")
 
-          if (text.matches(classNameMaybeDot))
+          if (text.matches(classNameWithDotMaybeIncomplete)) {
             resolveToPackage(
               text.replaceAfterLast(".", "").removeSuffix("."), project
             )?.let { addElems(allChildrenNames(it)) }
-          else {
-            val constructorCall = element.parent.parent.parent
-            if (constructorCall is YAMLKeyValue)
-              classOf(constructorCall)?.let { cls ->
-                findConstructor(cls)?.let { ctor ->
-                  addElems(ctor.parameterList.parameters.map { it.name })
-                }
+          } else {
+            val clazz =
+              when (val constructorCall = element.parent?.parent?.parent) {
+                is YAMLKeyValue -> classOf(constructorCall)
+                is YAMLSequenceItem -> typeOfItems(constructorCall.parent as YAMLSequence)?.let(::psiTypeToClass)
+                else -> null
+              }
+
+            if (clazz != null)
+              findConstructor(clazz)?.let { ctor ->
+                addElems(ctor.parameterList.parameters.map { it.name })
               }
           }
+        }
+      }
+    )
+
+    //TODO this is still not registering. Maybe use something other than SCALAR_TEXT?
+    extend(
+      BASIC,
+      PlatformPatterns.psiElement(YAMLTokenTypes.SCALAR_TEXT).withLanguage(YAMLLanguage.INSTANCE),
+      object : CompletionProvider<CompletionParameters>() {
+        override fun addCompletions(
+          parameters: CompletionParameters,
+          context: ProcessingContext,
+          resultSet: CompletionResultSet
+        ) {
+          resultSet.addElement(LookupElementBuilder.create("YAML is far superior to JSON. I dare you to say otherwise."))
+
+          val element = parameters.position
+          YamlAnnotator.LOG.error("Element is ${element.text}, ${element.javaClass}")
+          if (element is YAMLPlainTextImpl)
+            YamlAnnotator.getIds(element.project).keys.forEach { resultSet.addElement(LookupElementBuilder.create(it)) }
         }
       }
     )
