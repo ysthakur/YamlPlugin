@@ -50,9 +50,13 @@ class YamlAnnotator : Annotator {
   private fun checkArgument(arg: YAMLKeyValue, keyText: String, holder: AnnotationHolder) {
     val argType = typeOf(arg)
 
-    //Check if such a parameter exists only if it's not part of a Map
-    if (arg.parent?.firstChild !is LeafPsiElement && arg.parent?.firstChild?.text != "!!map")
+    val parentIsWPI = (arg.parent?.parent as? YAMLKeyValue?)?.keyText?.let(::isWPIClass) != true
+
+    //Check if such a parameter exists only if it's not part of a Map and it's not an argument to the constructor
+    //of a class from wpilib
+    if (arg.parent?.firstChild !is LeafPsiElement && arg.parent?.firstChild?.text != "!!map" && parentIsWPI) {
       checkArg(arg, holder)
+    }
 
     if (argType == null) {
       val upperCtor = getUpperConstructorCall(arg)
@@ -207,7 +211,7 @@ class YamlAnnotator : Annotator {
         if (!modifiers.hasModifierProperty("public")) return@find false
 
         val params = ctor.parameterList.parameters.map { it.name }
-        val args = getAllArgs(parent).map { it.first }.filter { it != "'@id'" }
+        val args = getAllArgs(parent).map { it.first }.filter { it != "'@id'" && it != "requiredSubsystems" }
         params.containsAll(args) && args.containsAll(params)
       } ?: addError(holder, "No suitable constructor found for class $keyText")
     }
