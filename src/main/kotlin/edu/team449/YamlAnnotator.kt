@@ -103,23 +103,6 @@ class YamlAnnotator : Annotator {
     }
   }
 
-//  private fun OLDcheckCtorCall(ctorDef: PsiMethod, ctorCall: YAMLKeyValue, cls: PsiClass) {
-//    val params = ctorDef.parameterList.parameters
-//
-//    val (requiredParams, otherParams) = params.partition(::isRequiredParam)
-//    val idName = getIdName(cls)
-//
-//    checkArgs(
-//      ctorCall,
-//      ctorCall.key,
-//      idName,
-//      idName == null || cls.qualifiedName!!.startsWith(wpiPackage),
-//      requiredParams.map { it.name },
-//      otherParams.map { it.name },
-//      getAllArgs(ctorCall)
-//    )
-//  }
-
   /**
    * Check if such a parameter exists. If it's the id parameter, add it to the map of ids
    */
@@ -131,9 +114,10 @@ class YamlAnnotator : Annotator {
       if (idName != argName) {
         //TODO should this be an error?
         addWarning(holder, "No such parameter: ${argName}")
-      } else {
-//        ids[arg.valueText] = SmartPointerManager.createPointer(arg.parent.parent as YAMLKeyValue)
       }
+//      else {
+//        ids[arg.valueText] = SmartPointerManager.createPointer(arg.parent.parent as YAMLKeyValue)
+//      }
     }
   }
 
@@ -152,54 +136,7 @@ class YamlAnnotator : Annotator {
     }
   }
 
-  /**
-   * Check all arguments for a constructor call.
-   *
-   * @param parent The parent (constructor/file?) to highlight with errors
-   * @param idName The id parameter (null if there is none)
-   * @param requiredParams The names of the required parameters
-   * @param otherParams The names of the non-required parameters
-   * @param args The actual arguments given that need to be checked
-   */
-//  private fun checkArgs(
-//    ctorCall: YAMLKeyValue,
-//    parent: PsiElement?,
-//    idName: String?,
-//    isIdRequired: Boolean,
-//    requiredParams: List<String>,
-//    otherParams: List<String>,
-//    args: List<Pair<String, YAMLKeyValue>>
-//  ) {
-//    val givenParams = mutableSetOf<String>()
-//    var foundId = isIdRequired || idName == null
-//
-//    for ((keyText, keyVal) in args) {
-//      val argName = removeQuotes(keyText)
-//      if (argName == idName) {
-//        foundId = true
-//        ids[keyVal.valueText] = SmartPointerManager.createPointer(ctorCall)
-//      } else if (argName in requiredParams || argName in otherParams) {
-//        if (argName in givenParams) addErrorAnnotation(keyVal, "Duplicate argument for property $argName")
-//        else givenParams += argName
-//      } else {
-//        addErrorAnnotation(
-//          keyVal.key!!,
-//          "Could not find a parameter named $argName"
-//        )
-//      }
-//    }
-//
-//    if (parent != null) {
-//      if (!foundId) addErrorAnnotation(parent, "No argument given for id parameter $idName")
-//      //Check that all the parameters have been entered in
-//      for (param in requiredParams) if (param !in givenParams) addErrorAnnotation(
-//        parent,
-//        "No argument given for required property $param"
-//      )
-//    }
-//  }
-
-  //TODO implement this
+  //TODO implement this properly?
   private fun checkPlaintext(
     element: YAMLPlainTextImpl,
     keyValue: YAMLKeyValue,
@@ -236,12 +173,13 @@ class YamlAnnotator : Annotator {
    * Check a constructor call where the class's name has been given
    */
   private fun checkQualifiedCtorCall(parent: YAMLKeyValue, keyText: String, holder: AnnotationHolder) {
-    //If it's got a dot in it, it's a class or package
     val argClass = resolveToClass(keyText, parent.project)
-
     if (argClass == null) {
       addError(holder, "No such class $keyText")
-    } else {
+      return
+    }
+
+    if (!isWPIClass(keyText)) {
       val isCtorCall = parent.value is YAMLMapping
       if (isCtorCall) {
         //It's a constructor call, so check it
@@ -263,6 +201,15 @@ class YamlAnnotator : Annotator {
           }
         }
       }
+    } else { //wpilib classes get special treatment
+      argClass.constructors.find { ctor ->
+        val modifiers = ctor.modifierList
+        if (!modifiers.hasModifierProperty("public")) return@find false
+
+        val params = ctor.parameterList.parameters.map { it.name }
+        val args = getAllArgs(parent).map { it.first }.filter { it != "'@id'" }
+        params.containsAll(args) && args.containsAll(params)
+      } ?: addError(holder, "No suitable constructor found for class $keyText")
     }
   }
 

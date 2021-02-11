@@ -19,9 +19,14 @@ import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 class YamlCompletionContributor : CompletionContributor() {
 
   init {
+    //TODO figure out why SCALAR_TEXT does not work. TEXT is not a good solution
     extend(
       BASIC,
-      PlatformPatterns.psiElement(YAMLTokenTypes.SCALAR_KEY).withLanguage(YAMLLanguage.INSTANCE),
+      PlatformPatterns.or(
+        PlatformPatterns.psiElement(YAMLTokenTypes.SCALAR_KEY).withLanguage(YAMLLanguage.INSTANCE),
+        PlatformPatterns.psiElement(YAMLTokenTypes.SCALAR_TEXT).withLanguage(YAMLLanguage.INSTANCE),
+        PlatformPatterns.psiElement(YAMLTokenTypes.TEXT).withLanguage(YAMLLanguage.INSTANCE)
+      ),
       object : CompletionProvider<CompletionParameters>() {
         override fun addCompletions(
           parameters: CompletionParameters,
@@ -40,6 +45,9 @@ class YamlCompletionContributor : CompletionContributor() {
           //Some idiot put in IntellijIdeaRulezzz into the text
           val text = element.text.replaceFirst(ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS, "")
 
+          //In case it's a reference using an object's id
+          addElems(YamlAnnotator.getIds(element.project).keys)
+
           if (text.matches(classNameWithDotMaybeIncomplete)) {
             resolveToPackage(
               text.replaceAfterLast(".", "").removeSuffix("."), project
@@ -57,26 +65,6 @@ class YamlCompletionContributor : CompletionContributor() {
                 addElems(ctor.parameterList.parameters.map { it.name })
               }
           }
-        }
-      }
-    )
-
-    //TODO this is still not registering. Maybe use something other than SCALAR_TEXT?
-    extend(
-      BASIC,
-      PlatformPatterns.psiElement(YAMLTokenTypes.SCALAR_TEXT).withLanguage(YAMLLanguage.INSTANCE),
-      object : CompletionProvider<CompletionParameters>() {
-        override fun addCompletions(
-          parameters: CompletionParameters,
-          context: ProcessingContext,
-          resultSet: CompletionResultSet
-        ) {
-          resultSet.addElement(LookupElementBuilder.create("YAML is far superior to JSON. I dare you to say otherwise."))
-
-          val element = parameters.position
-          YamlAnnotator.LOG.error("Element is ${element.text}, ${element.javaClass}")
-          if (element is YAMLPlainTextImpl)
-            YamlAnnotator.getIds(element.project).keys.forEach { resultSet.addElement(LookupElementBuilder.create(it)) }
         }
       }
     )
