@@ -100,7 +100,7 @@ class YamlAnnotator : Annotator {
         if (idName != null) {
           //If the id isn't found but it's required, mark an error
           if (needsId && args.all { removeQuotes(it.first) != idName }) {
-            addError(holder, "Id $idName not given")
+            addWarning(holder, "Id $idName not given")
           }
         }
       }
