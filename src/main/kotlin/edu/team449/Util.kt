@@ -95,8 +95,9 @@ fun needsJsonAnnot(cls: PsiClass): Boolean =
  * to set an id property (Default id is "`@id`")
  */
 fun needsIdAnnotation(cls: PsiClass): Boolean =
-  if (cls.qualifiedName!!.startsWith(wpiPackage)) false
-  else getIdName(cls) == null
+  !isWPIClass(cls.qualifiedName!!) && getIdName(cls) != null
+
+fun isWPIClass(className: String) = className.startsWith(wpiPackage)
 
 /**
  * TODO Don't just check if it's a WPI class
