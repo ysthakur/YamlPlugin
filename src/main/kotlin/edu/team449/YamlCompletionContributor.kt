@@ -20,6 +20,7 @@ class YamlCompletionContributor : CompletionContributor() {
 
   init {
     //TODO figure out why SCALAR_TEXT does not work. TEXT is not a good solution
+    //  also maybe separate SCALAR_KEY and TEXT
     extend(
       BASIC,
       PlatformPatterns.or(
@@ -46,24 +47,26 @@ class YamlCompletionContributor : CompletionContributor() {
           val text = element.text.replaceFirst(ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS, "")
 
           //In case it's a reference using an object's id
-          addElems(YamlAnnotator.getIds(element.project).keys)
+          if (element.parent is YAMLPlainTextImpl) {
+            addElems(YamlAnnotator.getIds(element.project).keys)
+          } else if (element.parent is YAMLKeyValue) {
+            if (text.matches(classNameWithDotMaybeIncomplete)) {
+              resolveToPackage(
+                text.replaceAfterLast(".", "").removeSuffix("."), project
+              )?.let { addElems(allChildrenNames(it)) }
+            } else {
+              val clazz =
+                when (val constructorCall = element.parent?.parent?.parent) {
+                  is YAMLKeyValue -> classOf(constructorCall)
+                  is YAMLSequenceItem -> typeOfItems(constructorCall.parent as YAMLSequence)?.let(::psiTypeToClass)
+                  else -> null
+                }
 
-          if (text.matches(classNameWithDotMaybeIncomplete)) {
-            resolveToPackage(
-              text.replaceAfterLast(".", "").removeSuffix("."), project
-            )?.let { addElems(allChildrenNames(it)) }
-          } else {
-            val clazz =
-              when (val constructorCall = element.parent?.parent?.parent) {
-                is YAMLKeyValue -> classOf(constructorCall)
-                is YAMLSequenceItem -> typeOfItems(constructorCall.parent as YAMLSequence)?.let(::psiTypeToClass)
-                else -> null
-              }
-
-            if (clazz != null)
-              findConstructor(clazz)?.let { ctor ->
-                addElems(ctor.parameterList.parameters.map { it.name })
-              }
+              if (clazz != null)
+                findConstructor(clazz)?.let { ctor ->
+                  addElems(ctor.parameterList.parameters.map { it.name })
+                }
+            }
           }
         }
       }

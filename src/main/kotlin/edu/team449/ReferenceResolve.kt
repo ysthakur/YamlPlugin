@@ -159,6 +159,18 @@ fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
   return clazz?.let { resolveToParameter(arg, it) }
 }
 
+fun getTheClassWhoseCtorThisIsAnArgTo(arg: YAMLKeyValue): PsiClass? {
+  return if (isTopLevel(arg))
+    robotClass(arg.project)
+  else
+    when (val seq = arg.parent?.parent?.parent) {
+      is YAMLSequence ->
+        typeOfItems(seq)?.let(::psiTypeToClass)
+      else ->
+        getUpperConstructorCall(arg)?.let(::classOf)
+    }
+}
+
 fun resolveToParameter(arg: YAMLKeyValue, clazz: PsiClass): PsiParameter? {
   //Make sure it's not an alias, resolve to the real value
   val paramName = getRealKeyText(arg)
@@ -287,6 +299,19 @@ fun resolveToClass(className: String, project: Project): PsiClass? =
     className,
     GlobalSearchScope.allScope(project)
   )
+
+/**
+ * Get the class whose constructor this is an argument to.
+ */
+fun getUpperClass(arg: YAMLKeyValue): PsiClass? {
+  val upperCtor = getUpperConstructorCall(arg)
+  if (upperCtor == null) {
+    return robotClass(arg.project)
+  } else {
+    return classOf(upperCtor)
+  }
+
+}
 
 /**
  * Get the name of the property representing the

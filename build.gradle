@@ -5,7 +5,7 @@ plugins {
 }
 
 def ideaVersion = '2020.3'
-def pluginVersion = '0.2.0'
+def pluginVersion = '0.3.0'
 
 group 'edu.team449'
 version ("$pluginVersion-$ideaVersion")
