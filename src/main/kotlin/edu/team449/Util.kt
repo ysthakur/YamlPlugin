@@ -60,12 +60,6 @@ fun couldBeIdReference(element: YAMLPlainTextImpl): Boolean {
   return element.firstChild !is YAMLAnchor && text.matches(VALID_IDENTIFIER_REGEX) && text != "true" && text != "false"
 }
 
-/**
- * TODO generalize this maybe?
- * Whether or not it's a list or other collection
- */
-fun isCollectionClass(className: String) = className.contains(LIST_CLASS_SIMPLE_NAME)
-
 fun hasAnnotation(method: PsiMethod, annotName: String) = method.findAnnotation(annotName) != null
 
 /**
@@ -87,15 +81,7 @@ fun String.afterDot() = Regex("""\.[^.]*$""").find(this)?.value?.removePrefix(".
  * TODO this is a terrible solution, fix this
  */
 fun needsJsonAnnot(cls: PsiClass): Boolean =
-  !(cls.qualifiedName?.startsWith("edu.wpi") ?: true)
-
-/**
- * TODO figure out why I made this in the first place
- * Whether or not it needs a `JsonIdentityInfo` annotation
- * to set an id property (Default id is "`@id`")
- */
-fun needsIdAnnotation(cls: PsiClass): Boolean =
-  !isWPIClass(cls.qualifiedName!!) && getIdName(cls) != null
+  !(cls.qualifiedName?.let(::isWPIClass) ?: true)
 
 fun isWPIClass(className: String) = className.startsWith(wpiPackage)
 
@@ -112,6 +98,13 @@ fun getAndNeedsId(cls: PsiClass): Pair<String?, Boolean> =
 
 //TODO work on this
 fun isTopLevel(keyVal: YAMLKeyValue): Boolean = keyVal.parent?.parent is YAMLDocument
+
+fun ctorParamNames(cls: PsiClass): List<String>? =
+  if (cls.qualifiedName?.let(::isWPIClass) == true) {
+    wpiCtors[cls.qualifiedName!!]?.map { it.first } ?: emptyList()
+  } else {
+    findConstructor(cls)?.let { ctor -> ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name } }
+  }
 
 /**
  * Get the constructor call that this is an argument to, but if
