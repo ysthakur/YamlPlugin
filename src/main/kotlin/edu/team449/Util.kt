@@ -22,10 +22,18 @@ val TYPE_ACCEPTING_SINGLE_TYPE_PARAMETER_REGEX =
 
 fun removeQuotes(s: String) = s.removeSurrounding("\"").removeSurrounding("'")
 
-fun PsiMethod.findAnnotation(annotName: String) =
-  this.annotations.find { a -> (a.qualifiedName ?: "").afterDot() == annotName }
+fun findAnnotation(methodOrParam: PsiModifierListOwner, annotName: String) =
+  methodOrParam.annotations.find { a -> (a.qualifiedName ?: "").afterDot() == annotName }
 
-fun PsiMethod.findParam(paramName: String) = this.parameterList.parameters.find { p -> p.name == paramName }
+fun findParam(method: PsiMethod, paramName: String) =
+  method.parameterList.parameters.find { p ->
+    paramName ==
+    (findAnnotation(p, "JsonProperty")
+      ?.parameterList?.attributes
+      ?.find { it.name == "value" }
+      ?.detachedValue?.text?.removeSurrounding("\"", "\"")
+      ?: p.name)
+  }
 
 fun psiTypeToClass(type: PsiType): PsiClass? = PsiTypesUtil.getPsiClass(type)
 
@@ -60,7 +68,7 @@ fun couldBeIdReference(element: YAMLPlainTextImpl): Boolean {
   return element.firstChild !is YAMLAnchor && text.matches(VALID_IDENTIFIER_REGEX) && text != "true" && text != "false"
 }
 
-fun hasAnnotation(method: PsiMethod, annotName: String) = method.findAnnotation(annotName) != null
+fun hasAnnotation(method: PsiMethod, annotName: String) = findAnnotation(method, annotName) != null
 
 /**
  * Whether or not it looks like this:
@@ -81,7 +89,7 @@ fun String.afterDot() = Regex("""\.[^.]*$""").find(this)?.value?.removePrefix(".
  * TODO this is a terrible solution, fix this
  */
 fun needsJsonAnnot(cls: PsiClass): Boolean =
-  !(cls.qualifiedName?.let(::isWPIClass) ?: true)
+  true //!(cls.qualifiedName?.let(::isWPIClass) ?: true)
 
 fun isWPIClass(className: String) = className.startsWith(wpiPackage)
 
@@ -100,11 +108,10 @@ fun getAndNeedsId(cls: PsiClass): Pair<String?, Boolean> =
 fun isTopLevel(keyVal: YAMLKeyValue): Boolean = keyVal.parent?.parent is YAMLDocument
 
 fun ctorParamNames(cls: PsiClass): List<String>? =
-  if (cls.qualifiedName?.let(::isWPIClass) == true) {
-    wpiCtors[cls.qualifiedName!!]?.map { it.first } ?: emptyList()
-  } else {
-    findConstructor(cls)?.let { ctor -> ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name } }
-  }
+  findConstructor(cls)
+    ?.let { ctor -> ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name } }
+    ?: (if (cls.qualifiedName?.let(::isWPIClass) == true) wpiCtors[cls.qualifiedName!!]?.map { it.first } ?: emptyList()
+        else null)
 
 /**
  * Get the constructor call that this is an argument to, but if

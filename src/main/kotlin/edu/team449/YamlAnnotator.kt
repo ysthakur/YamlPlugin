@@ -56,7 +56,7 @@ class YamlAnnotator : Annotator {
 
     //Check if such a parameter exists only if it's not part of a Map and it's not an argument to the constructor
     //of a class from wpilib
-    if (arg.parent?.firstChild !is LeafPsiElement && arg.parent?.firstChild?.text != "!!map" && parentIsWPI) {
+    if (arg.parent?.firstChild !is LeafPsiElement && arg.parent?.firstChild?.text != "!!map"/* && parentIsWPI*/) {
       checkArg(arg, holder)
     }
 
@@ -90,7 +90,7 @@ class YamlAnnotator : Annotator {
         val argClass = PsiTypesUtil.getPsiClass(argType)!!
         //It's a constructor call, so check it
         val args = getAllArgs(arg)
-        if (!parentIsWPI) {
+        if (true/*!parentIsWPI*/) {
           //Check that all parameters have been given
           ctorParamNames(argClass)?.let { checkParams(args, it, holder) }
 

@@ -8,7 +8,6 @@ import edu.team449.YamlAnnotator.Companion.LOG
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.YAMLSequence
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
-import org.jetbrains.yaml.psi.impl.YAMLBlockSequenceImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 
 const val identifierRegexStr = """[A-Za-z_][A-Za-z_0-9]*"""
@@ -173,8 +172,8 @@ fun getTheClassWhoseCtorThisIsAnArgTo(arg: YAMLKeyValue): PsiClass? {
 
 fun resolveToParameter(arg: YAMLKeyValue, clazz: PsiClass): PsiParameter? {
   //Make sure it's not an alias, resolve to the real value
-  val paramName = getRealKeyText(arg)
-  val res = paramName?.let { findConstructor(clazz)?.findParam(it) }
+  val argName = getRealKeyText(arg)
+  val res = argName?.let { name -> findConstructor(clazz)?.let { findParam(it, name) } }
 //  if (res == null) LOG.error("Could not resolve ${paramName}, ${arg.keyText}")
   return res
 }
@@ -235,7 +234,7 @@ fun classOf(keyValue: YAMLKeyValue): PsiClass? =
  */
 fun typeOf(keyValue: YAMLKeyValue): PsiType? =
   if (isQualifiedConstructorCall(keyValue))
-    resolveToClass(keyValue)?.let(::psiClassToType) ?: run{
+    resolveToClass(keyValue)?.let(::psiClassToType) ?: run {
       LOG.warn("class not found ${keyValue.keyText}")
       null
     }
@@ -252,7 +251,7 @@ fun typeOf(keyValue: YAMLKeyValue): PsiType? =
           }
         }
       }
-      else -> resolveToParameter(keyValue)?.type ?: run{
+      else -> resolveToParameter(keyValue)?.type ?: run {
 //        LOG.error("cannot resolve paramter ${keyValue.keyText}, istoplevel=${isTopLevel(keyValue)}")
 //        TODO()
         null
@@ -321,12 +320,11 @@ fun getUpperClass(arg: YAMLKeyValue): PsiClass? {
  *         class (identified by package name), and the custom id otherwise.
  */
 fun getIdName(cls: PsiClass): String? =
-  if (cls.qualifiedName?.startsWith(wpiPackage) == true) DEFAULT_ID
-  else cls.annotations.find { annot ->
+  cls.annotations.find { annot ->
     annot.qualifiedName?.endsWith("JsonIdentityInfo") ?: false
   }?.let { idAnnot ->
     idAnnot.findAttributeValue("property")?.text?.let { removeQuotes(it) } ?: DEFAULT_ID
-  }
+  } ?: (if (cls.qualifiedName?.startsWith(wpiPackage) == true) DEFAULT_ID else null)
 
 /**
  * Find a package by name
