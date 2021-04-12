@@ -28,11 +28,11 @@ fun findAnnotation(methodOrParam: PsiModifierListOwner, annotName: String) =
 fun findParam(method: PsiMethod, paramName: String) =
   method.parameterList.parameters.find { p ->
     paramName ==
-    (findAnnotation(p, "JsonProperty")
-      ?.parameterList?.attributes
-      ?.find { it.name == "value" }
-      ?.detachedValue?.text?.removeSurrounding("\"", "\"")
-      ?: p.name)
+            (findAnnotation(p, "JsonProperty")
+              ?.parameterList?.attributes
+              ?.find { it.name == "value" }
+              ?.detachedValue?.text?.removeSurrounding("\"", "\"")
+              ?: p.name)
   }
 
 fun psiTypeToClass(type: PsiType): PsiClass? = PsiTypesUtil.getPsiClass(type)
@@ -59,14 +59,6 @@ fun extractTypeArgument(typeText: String) = typeText.substringAfter('<').removeS
 //fun PsiClass.isCollectionClass(): Boolean =
 //  TODO("Figure out how collections work")
 //this.name?.startsWith(LIST_CLASS_SIMPLE_NAME) ?: false
-
-/**
- * Whether or not an element could be a reference to some other object using that object's id
- */
-fun couldBeIdReference(element: YAMLPlainTextImpl): Boolean {
-  val text = element.text
-  return element.firstChild !is YAMLAnchor && text.matches(VALID_IDENTIFIER_REGEX) && text != "true" && text != "false"
-}
 
 fun hasAnnotation(method: PsiMethod, annotName: String) = findAnnotation(method, annotName) != null
 
@@ -111,7 +103,7 @@ fun ctorParamNames(cls: PsiClass): List<String>? =
   findConstructor(cls)
     ?.let { ctor -> ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name } }
     ?: (if (cls.qualifiedName?.let(::isWPIClass) == true) wpiCtors[cls.qualifiedName!!]?.map { it.first } ?: emptyList()
-        else null)
+    else null)
 
 /**
  * Get the constructor call that this is an argument to, but if

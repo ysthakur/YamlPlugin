@@ -5,7 +5,10 @@ import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.psi.*
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
+import com.intellij.psi.SmartPointerManager
+import com.intellij.psi.SmartPsiElementPointer
 import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.psi.util.PsiTypesUtil
 import com.intellij.refactoring.suggested.startOffset
@@ -52,7 +55,7 @@ class YamlAnnotator : Annotator {
   private fun checkArgument(arg: YAMLKeyValue, keyText: String, holder: AnnotationHolder) {
     val argType = typeOf(arg)
 
-    val parentIsWPI = (arg.parent?.parent as? YAMLKeyValue?)?.keyText?.let(::isWPIClass) != true
+//    val parentIsWPI = (arg.parent?.parent as? YAMLKeyValue?)?.keyText?.let(::isWPIClass) != true
 
     //Check if such a parameter exists only if it's not part of a Map and it's not an argument to the constructor
     //of a class from wpilib
@@ -61,8 +64,7 @@ class YamlAnnotator : Annotator {
     }
 
     if (argType == null) {
-      val upperCtor = getUpperConstructorCall(arg)
-      val clazz = upperCtor?.let(::classOf)
+      val clazz = getUpperClass(arg)
       val idKey = clazz?.let(::getIdName)
 
       if (idKey == removeQuotes(keyText)) {
@@ -90,17 +92,16 @@ class YamlAnnotator : Annotator {
         val argClass = PsiTypesUtil.getPsiClass(argType)!!
         //It's a constructor call, so check it
         val args = getAllArgs(arg)
-        if (true/*!parentIsWPI*/) {
-          //Check that all parameters have been given
-          ctorParamNames(argClass)?.let { checkParams(args, it, holder) }
 
-          //Check that the id is given
-          val (idName, needsId) = getAndNeedsId(argClass)
-          if (idName != null) {
-            //If the id isn't found but it's required, mark an error
-            if (needsId && args.all { removeQuotes(it.first) != idName }) {
-              addWarning(holder, "Id $idName not given")
-            }
+        //Check that all parameters have been given
+        ctorParamNames(argClass)?.let { checkParams(args, it, holder) }
+
+        //Check that the id is given
+        val (idName, needsId) = getAndNeedsId(argClass)
+        if (idName != null) {
+          //If the id isn't found but it's required, mark an error
+          if (needsId && args.all { removeQuotes(it.first) != idName }) {
+            addWarning(holder, "Id $idName not given")
           }
         }
       }
@@ -120,7 +121,7 @@ class YamlAnnotator : Annotator {
           //If it's not one of the parameters, and it's not the id, mark a warning
           if (idName != argName) {
             //TODO should this be an error?
-            addWarning(holder, "No such parameter: ${argName}")
+            addWarning(holder, "No such parameter: $argName")
           }
 //      else {
 //        ids[arg.valueText] = SmartPointerManager.createPointer(arg.parent.parent as YAMLKeyValue)
@@ -159,12 +160,12 @@ class YamlAnnotator : Annotator {
         if (ref == null) {
           addError(
             holder,
-            "Could not find previous object with id ${text}"
+            "Could not find previous object with id $text"
           )
         } else if (ref.startOffset > element.startOffset) {
           addWarning(holder, "Forward reference")
         }
-      } else if (text.matches(VALID_IDENTIFIER_REGEX)) {
+      } /*else if (text.matches(VALID_IDENTIFIER_REGEX)) {
         if (text == "true" || text == "false") {
 
         } else if (clazz?.isEnum == true) {
@@ -174,7 +175,7 @@ class YamlAnnotator : Annotator {
         }
       } else { //has to be a number (or string?)
 
-      }
+      }*/
     }
   }
 
@@ -188,23 +189,21 @@ class YamlAnnotator : Annotator {
       return
     }
 
-    if (true) { //!isWPIClass(keyText)) {
-      val isCtorCall = parent.value is YAMLMapping
-      if (isCtorCall) {
-        //It's a constructor call, so check it
-        val args = getAllArgs(parent)
+    val isCtorCall = parent.value is YAMLMapping
+    if (isCtorCall) {
+      //It's a constructor call, so check it
+      val args = getAllArgs(parent)
 
-        //Check that all parameters have been given
-        ctorParamNames(argClass)?.let { params -> checkParams(args, params, holder) }
-          ?: addWarning(holder, "No constructor found for class $keyText")
+      //Check that all parameters have been given
+      ctorParamNames(argClass)?.let { params -> checkParams(args, params, holder) }
+        ?: addWarning(holder, "No constructor found for class $keyText")
 
-        //Check that the id is given
-        val (idName, needsId) = getAndNeedsId(argClass)
-        if (idName != null) {
-          //If the id isn't found but it's required, mark an error
-          if (needsId && args.all { removeQuotes(it.first) != idName }) {
-            addWarning(holder, "Id $idName not given")
-          }
+      //Check that the id is given
+      val (idName, needsId) = getAndNeedsId(argClass)
+      if (idName != null) {
+        //If the id isn't found but it's required, mark an error
+        if (needsId && args.all { removeQuotes(it.first) != idName }) {
+          addWarning(holder, "Id $idName not given")
         }
       }
     }
@@ -245,7 +244,7 @@ class YamlAnnotator : Annotator {
     }
   }
 
-  class ChangeListener(project: Project) : PsiTreeChangeListener {
+  /*class ChangeListener(project: Project) : PsiTreeChangeListener {
     override fun beforeChildAddition(event: PsiTreeChangeEvent) {
       //TODO("Not yet implemented")
     }
@@ -294,5 +293,5 @@ class YamlAnnotator : Annotator {
       //TODO("Not yet implemented")
     }
 
-  }
+  }*/
 }
