@@ -68,7 +68,7 @@ fun hasAnnotation(method: PsiMethod, annotName: String) = findAnnotation(method,
  *  key: val
  */
 fun isQualifiedConstructorCall(constructorCall: YAMLKeyValue): Boolean =
-  getRealKeyText(constructorCall)?.let { incompleteCodeFormatted(it).matches(classNameRegex) } ?: false
+  getRealKeyText(constructorCall).let { incompleteCodeFormatted(it).matches(classNameRegex) }
 
 fun incompleteCodeFormatted(text: String) = text.replace(ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS, "")
 

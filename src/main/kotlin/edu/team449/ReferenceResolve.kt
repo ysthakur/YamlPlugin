@@ -80,7 +80,7 @@ fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
  * Find the class whose constructor/JsonCreator is being called
  */
 fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
-  getRealKeyText(constructorCall)?.let { resolveToClass(it, constructorCall.project) }
+  getRealKeyText(constructorCall).let { resolveToClass(it, constructorCall.project) }
 
 /**
  * If the input is an alias, it keeps trying to find the
