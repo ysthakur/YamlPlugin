@@ -4,11 +4,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import edu.team449.RobotStuff.robotClass
-import edu.team449.YamlAnnotator.Companion.LOG
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.YAMLSequence
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
-import org.jetbrains.yaml.psi.impl.YAMLBlockSequenceImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
 
 const val identifierRegexStr = """[A-Za-z_][A-Za-z_0-9]*"""
@@ -78,56 +76,11 @@ fun findIdArg(args: Iterable<YAMLKeyValue>, cls: PsiClass): YAMLKeyValue? {
 fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
   removeQuotes(arg.keyText) == idName
 
-//fun findArg(constructorCall: YAMLKeyValue, argName: String): YAMLValue =
-//  getAllArgs2(constructorCall).filterValues { keyVal -> removeQuotes(keyVal.keyText) == argName }
-
-/**
- * Find a child PSI element inside this element recursively
- * using the predicate given
- * @param parent The parent that may or may not contain a child matching
- * pred
- * @param pred the predicate used to determine if the element has
- * been found
- */
-//fun findElementLinearly(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? {
-//  for (child in parent.children) {
-//    return if (pred(child)) child
-//    else findElementLinearly(child, pred) ?: continue
-//  }
-//  return null
-//}
-
-/**
- * This apparently doesn't work because it's in a different thread
- */
-/*
-fun findElement(parent: PsiElement, pred: (PsiElement) -> Boolean): PsiElement? {
-  val childThreads = AtomicReference<MutableSet<Thread>>(mutableSetOf())
-  val mainRes = AtomicReference<PsiElement?>()
-  for (child in parent.children) {
-    if (mainRes.get() != null) break
-    if (pred(child)) return child
-    else {
-      val thr = thread {
-        val res = findElement(child, pred) ?: return@thread
-        mainRes.set(res)
-        val me = Thread.currentThread()
-        for (t in childThreads.acquire) {
-          if (t != me) t.interrupt()
-        }
-      }
-      childThreads.get().add(thr)
-    }
-  }
-  return mainRes.get()
-}
-*/
-
 /**
  * Find the class whose constructor/JsonCreator is being called
  */
 fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
-  getRealKeyText(constructorCall)?.let { resolveToClass(it, constructorCall.project) }
+  getRealKeyText(constructorCall).let { resolveToClass(it, constructorCall.project) }
 
 /**
  * If the input is an alias, it keeps trying to find the
@@ -137,7 +90,7 @@ fun getRealValue(element: PsiElement): PsiElement? =
   if (element is YAMLAliasImpl) anchorValue(element)?.let(::getRealValue)
   else element
 
-fun getRealKeyText(element: YAMLKeyValue): String? =
+fun getRealKeyText(element: YAMLKeyValue): String =
   when (val key = getRealValue(element.key!!)) {
     is YAMLKeyValue -> key.keyText
     else -> key?.text ?: run {
@@ -173,10 +126,8 @@ fun getTheClassWhoseCtorThisIsAnArgTo(arg: YAMLKeyValue): PsiClass? {
 
 fun resolveToParameter(arg: YAMLKeyValue, clazz: PsiClass): PsiParameter? {
   //Make sure it's not an alias, resolve to the real value
-  val paramName = getRealKeyText(arg)
-  val res = paramName?.let { findConstructor(clazz)?.findParam(it) }
-//  if (res == null) LOG.error("Could not resolve ${paramName}, ${arg.keyText}")
-  return res
+  val argName = getRealKeyText(arg)
+  return findConstructor(clazz)?.let { findParam(it, argName) }
 }
 
 fun typeOfItems(seq: YAMLSequence): PsiType? =
@@ -235,14 +186,10 @@ fun classOf(keyValue: YAMLKeyValue): PsiClass? =
  */
 fun typeOf(keyValue: YAMLKeyValue): PsiType? =
   if (isQualifiedConstructorCall(keyValue))
-    resolveToClass(keyValue)?.let(::psiClassToType) ?: run{
-      LOG.warn("class not found ${keyValue.keyText}")
-      null
-    }
+    resolveToClass(keyValue)?.let(::psiClassToType)
   else
     when (val greatGrandParent = keyValue.parent?.parent?.parent) {
-      is YAMLSequence -> {
-//        YamlAnnotator.LOG.warn("Found YAML sequence ${keyValue.keyText}!!!")
+      is YAMLSequence ->
         typeOfItems(greatGrandParent)?.let { outer ->
           psiTypeToClass(outer)?.let {
             resolveToParameter(
@@ -251,12 +198,7 @@ fun typeOf(keyValue: YAMLKeyValue): PsiType? =
             )?.type
           }
         }
-      }
-      else -> resolveToParameter(keyValue)?.type ?: run{
-//        LOG.error("cannot resolve paramter ${keyValue.keyText}, istoplevel=${isTopLevel(keyValue)}")
-//        TODO()
-        null
-      }
+      else -> resolveToParameter(keyValue)?.type
     }
 
 /**
@@ -305,12 +247,11 @@ fun resolveToClass(className: String, project: Project): PsiClass? =
  */
 fun getUpperClass(arg: YAMLKeyValue): PsiClass? {
   val upperCtor = getUpperConstructorCall(arg)
-  if (upperCtor == null) {
-    return robotClass(arg.project)
+  return if (upperCtor == null) {
+    robotClass(arg.project)
   } else {
-    return classOf(upperCtor)
+    classOf(upperCtor)
   }
-
 }
 
 /**
@@ -321,12 +262,11 @@ fun getUpperClass(arg: YAMLKeyValue): PsiClass? {
  *         class (identified by package name), and the custom id otherwise.
  */
 fun getIdName(cls: PsiClass): String? =
-  if (cls.qualifiedName?.startsWith(wpiPackage) == true) DEFAULT_ID
-  else cls.annotations.find { annot ->
+  cls.annotations.find { annot ->
     annot.qualifiedName?.endsWith("JsonIdentityInfo") ?: false
   }?.let { idAnnot ->
     idAnnot.findAttributeValue("property")?.text?.let { removeQuotes(it) } ?: DEFAULT_ID
-  }
+  } ?: (if (cls.qualifiedName?.startsWith(wpiPackage) == true) DEFAULT_ID else null)
 
 /**
  * Find a package by name

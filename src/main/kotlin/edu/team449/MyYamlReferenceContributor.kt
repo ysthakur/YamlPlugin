@@ -44,8 +44,7 @@ class ConstructorRef(private val ctor: YAMLKeyValue) : PsiPolyVariantReferenceBa
 }
 
 class ParamRef(private val param: YAMLKeyValue) : PsiReferenceBase<YAMLKeyValue>(param) {
-  override fun resolve() =
-    resolveToParameter(param)
+  override fun resolve() = resolveToParameter(param)
 }
 
 class IdRef(private val id: YAMLPlainTextImpl) : PsiReferenceBase<YAMLPlainTextImpl>(id) {

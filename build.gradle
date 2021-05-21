@@ -1,11 +1,11 @@
 plugins {
     id 'java'
-    id 'org.jetbrains.intellij' version '0.6.5'
-    id 'org.jetbrains.kotlin.jvm' version '1.4.30'
+    id 'org.jetbrains.intellij' version '0.7.3'
+    id 'org.jetbrains.kotlin.jvm' version '1.5.0'
 }
 
-def ideaVersion = '2020.3'
-def pluginVersion = '0.3.0'
+def ideaVersion = '2021.1.1'
+def pluginVersion = '0.4.0'
 
 group 'edu.team449'
 version ("$pluginVersion-$ideaVersion")
@@ -17,8 +17,8 @@ repositories {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-    testImplementation group: 'junit', name: 'junit', version: '4.12'
+    implementation group: 'org.jetbrains.kotlin', name: 'kotlin-stdlib', version: '1.5.0'
+//    testImplementation group: 'junit', name: 'junit', version: '5.7.2'
 }
 
 // See https://github.com/JetBrains/gradle-intellij-plugin/
