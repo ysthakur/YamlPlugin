@@ -1,11 +1,11 @@
 plugins {
     id 'java'
-    id 'org.jetbrains.intellij' version '0.7.3'
+    id 'org.jetbrains.intellij' version '1.1.6'
     id 'org.jetbrains.kotlin.jvm' version '1.5.0'
 }
 
-def ideaVersion = '2021.1.1'
-def pluginVersion = '0.4.0'
+def ideaVersion = '2021.2.2'
+def pluginVersion = '0.5.0a'
 
 group 'edu.team449'
 version ("$pluginVersion-$ideaVersion")
@@ -21,10 +21,16 @@ dependencies {
 //    testImplementation group: 'junit', name: 'junit', version: '5.7.2'
 }
 
+wrapper {
+    gradleVersion = '7.1'
+    distributionType = Wrapper.DistributionType.ALL
+}
+
 // See https://github.com/JetBrains/gradle-intellij-plugin/
 intellij {
     version ideaVersion
-    plugins = ['java', 'yaml', 'gradle']
+    plugins = ['java', 'yaml', 'gradle']//, 'org.intellij.kotlin:2021.1.1']
+    instrumentCode = false
 }
 
 compileKotlin {

@@ -12,6 +12,8 @@ import com.intellij.psi.SmartPsiElementPointer
 import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.psi.util.PsiTypesUtil
 import com.intellij.refactoring.suggested.startOffset
+import org.jetbrains.uast.UClass
+import org.jetbrains.uast.UastFacade
 import org.jetbrains.yaml.psi.YAMLAnchor
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.YAMLMapping
@@ -89,19 +91,20 @@ class YamlAnnotator : Annotator {
           else -> false
         }
       if (isCtorCall) {
-        val argClass = PsiTypesUtil.getPsiClass(argType)!!
-        //It's a constructor call, so check it
-        val args = getAllArgs(arg)
+        PsiTypesUtil.getPsiClass(argType)?.toUClass()?.let { argClass ->
+          //It's a constructor call, so check it
+          val args = getAllArgs(arg)
 
-        //Check that all parameters have been given
-        ctorParamNames(argClass)?.let { checkParams(args, it, holder) }
+          //Check that all parameters have been given
+          ctorParamNames(argClass)?.let { checkParams(args, it, holder) }
 
-        //Check that the id is given
-        val (idName, needsId) = getAndNeedsId(argClass)
-        if (idName != null) {
-          //If the id isn't found but it's required, mark an error
-          if (needsId && args.all { removeQuotes(it.first) != idName }) {
-            addWarning(holder, "Id $idName not given")
+          //Check that the id is given
+          val (idName, needsId) = getAndNeedsId(argClass)
+          if (idName != null) {
+            //If the id isn't found but it's required, mark an error
+            if (needsId && args.all { removeQuotes(it.first) != idName }) {
+              addWarning(holder, "Id $idName not given")
+            }
           }
         }
       }
@@ -150,7 +153,7 @@ class YamlAnnotator : Annotator {
   private fun checkPlaintext(
     element: YAMLPlainTextImpl,
     keyValue: YAMLKeyValue,
-    clazz: PsiClass?,
+    clazz: UClass?,
     holder: AnnotationHolder
   ) {
     if (element.firstChild !is YAMLAnchor) {

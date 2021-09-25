@@ -2,6 +2,10 @@ package edu.team449
 
 import com.intellij.psi.*
 import com.intellij.psi.util.PsiTypesUtil
+import org.jetbrains.uast.UClass
+import org.jetbrains.uast.UTypeReferenceExpression
+import org.jetbrains.uast.UastFacade
+import org.jetbrains.uast.convertWithParent
 import org.jetbrains.yaml.psi.*
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
 import org.jetbrains.yaml.psi.impl.YAMLPlainTextImpl
@@ -37,7 +41,9 @@ fun findParam(method: PsiMethod, paramName: String) =
 
 fun psiTypeToClass(type: PsiType): PsiClass? = PsiTypesUtil.getPsiClass(type)
 
-fun psiClassToType(clazz: PsiClass): PsiType =
+fun typeToClass(type: UTypeReferenceExpression): UClass? = TODO()
+
+fun psiClassToType(clazz: UClass): PsiType =
   JavaPsiFacade.getInstance(clazz.project).elementFactory.createType(clazz)
 
 /**
@@ -80,7 +86,7 @@ fun String.afterDot() = Regex("""\.[^.]*$""").find(this)?.value?.removePrefix(".
  * Currently just checks if it's from WPI
  * TODO this is a terrible solution, fix this
  */
-fun needsJsonAnnot(cls: PsiClass): Boolean =
+fun needsJsonAnnot(cls: UClass): Boolean =
   true //!(cls.qualifiedName?.let(::isWPIClass) ?: true)
 
 fun isWPIClass(className: String) = className.startsWith(wpiPackage)
@@ -90,7 +96,7 @@ fun isWPIClass(className: String) = className.startsWith(wpiPackage)
  * A pair where the first element is the name of the id for the given class
  * and the second parameter tells you whether or not the id is required
  */
-fun getAndNeedsId(cls: PsiClass): Pair<String?, Boolean> =
+fun getAndNeedsId(cls: UClass): Pair<String?, Boolean> =
   getIdName(cls)?.let { id ->
     Pair(id, !(cls.qualifiedName?.startsWith(wpiPackage) ?: true))
   } ?: Pair(null, false)
@@ -99,7 +105,7 @@ fun getAndNeedsId(cls: PsiClass): Pair<String?, Boolean> =
 //TODO work on this
 fun isTopLevel(keyVal: YAMLKeyValue): Boolean = keyVal.parent?.parent is YAMLDocument
 
-fun ctorParamNames(cls: PsiClass): List<String>? =
+fun ctorParamNames(cls: UClass): List<String>? =
   findConstructor(cls)
     ?.let { ctor -> ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name } }
     ?: (if (cls.qualifiedName?.let(::isWPIClass) == true) wpiCtors[cls.qualifiedName!!]?.map { it.first } ?: emptyList()
@@ -144,6 +150,8 @@ inline fun <reified T : PsiElement> anchorIfAliasNullIfWrongTypeElseSame(value: 
     is T -> value
     else -> null
   }
+
+fun PsiClass.toUClass(): UClass? = UastFacade.convertWithParent(this)
 
 /**
  * Gets the value referred to by the alias, if there is one

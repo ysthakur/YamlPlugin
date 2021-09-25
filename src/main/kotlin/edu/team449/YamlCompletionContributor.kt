@@ -58,7 +58,7 @@ class YamlCompletionContributor : CompletionContributor() {
               val clazz =
                 when (val constructorCall = element.parent?.parent?.parent) {
                   is YAMLKeyValue -> classOf(constructorCall)
-                  is YAMLSequenceItem -> typeOfItems(constructorCall.parent as YAMLSequence)?.let(::psiTypeToClass)
+                  is YAMLSequenceItem -> typeOfItems(constructorCall.parent as YAMLSequence)?.let{psiTypeToClass(it)?.toUClass()}
                   else -> null
                 }
 

@@ -4,6 +4,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import edu.team449.RobotStuff.robotClass
+import org.jetbrains.uast.UClass
+import org.jetbrains.uast.UMethod
+import org.jetbrains.uast.UTypeReferenceExpression
+import org.jetbrains.uast.UastClassKind
 import org.jetbrains.yaml.psi.YAMLKeyValue
 import org.jetbrains.yaml.psi.YAMLSequence
 import org.jetbrains.yaml.psi.impl.YAMLAliasImpl
@@ -19,11 +23,11 @@ val classNameWithDotMaybeIncomplete =
 val classNameRegex = Regex(classNameRegexStr)
 
 object RobotStuff {
-  private var robotClasses: MutableMap<Project, PsiClass> = mutableMapOf()
-  private var robotCtors: MutableMap<Project, PsiMethod> = mutableMapOf()
+  private var robotClasses: MutableMap<Project, UClass> = mutableMapOf()
+  private var robotCtors: MutableMap<Project, UMethod> = mutableMapOf()
 
-  fun robotClass(project: Project): PsiClass =
-    robotClasses.getOrPut(project) { resolveToClass(ROBOT_MAP_QUALIFIED_NAME, project)!! }
+  fun robotClass(project: Project): UClass =
+    robotClasses.getOrPut(project) { resolveToClass(ROBOT_MAP_QUALIFIED_NAME, project)!!.toUClass()!! }
 
   fun robotConstructor(project: Project): PsiMethod =
     robotCtors.getOrPut(project) { findConstructor(robotClass(project))!! }
@@ -69,7 +73,7 @@ fun getIdValue(constructorCall: YAMLKeyValue): String? {
     return findIdArg(args, resolveToClass(constructorCall) ?: return null)
 }*/
 
-fun findIdArg(args: Iterable<YAMLKeyValue>, cls: PsiClass): YAMLKeyValue? {
+fun findIdArg(args: Iterable<YAMLKeyValue>, cls: UClass): YAMLKeyValue? {
   return args.find { keyVal -> removeQuotes(keyVal.keyText) == getIdName(cls) ?: return null }
 }
 
@@ -79,7 +83,7 @@ fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
 /**
  * Find the class whose constructor/JsonCreator is being called
  */
-fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
+fun resolveToClass(constructorCall: YAMLKeyValue): UClass? =
   getRealKeyText(constructorCall).let { resolveToClass(it, constructorCall.project) }
 
 /**
@@ -109,25 +113,25 @@ fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
         else ->
           getUpperConstructorCall(arg)?.let(::classOf)
       }
-  return clazz?.let { resolveToParameter(arg, it) }
+  return clazz?.toUClass()?.let { resolveToParameter(arg, it) }
 }
 
-fun getTheClassWhoseCtorThisIsAnArgTo(arg: YAMLKeyValue): PsiClass? {
+fun resolveToParameter(arg: YAMLKeyValue, clazz: UClass): PsiParameter? {
+  //Make sure it's not an alias, resolve to the real value
+  val argName = getRealKeyText(arg)
+  return findConstructor(clazz)?.let { findParam(it, argName) }
+}
+
+fun getTheClassWhoseCtorThisIsAnArgTo(arg: YAMLKeyValue): UClass? {
   return if (isTopLevel(arg))
     robotClass(arg.project)
   else
     when (val seq = arg.parent?.parent?.parent) {
       is YAMLSequence ->
-        typeOfItems(seq)?.let(::psiTypeToClass)
+        typeOfItems(seq)?.let{psiTypeToClass(it)?.toUClass()}
       else ->
         getUpperConstructorCall(arg)?.let(::classOf)
     }
-}
-
-fun resolveToParameter(arg: YAMLKeyValue, clazz: PsiClass): PsiParameter? {
-  //Make sure it's not an alias, resolve to the real value
-  val argName = getRealKeyText(arg)
-  return findConstructor(clazz)?.let { findParam(it, argName) }
 }
 
 fun typeOfItems(seq: YAMLSequence): PsiType? =
@@ -154,7 +158,7 @@ fun typeOfItems(seq: YAMLSequence): PsiType? =
  * YAML files (whether they're actual constructors or methods
  * annotated with `JsonCreator`)
  */
-fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> =
+fun allYAMLConstructors(cls: UClass): List<UMethod> =
   cls.methods.filter(
     if (needsJsonAnnot(cls)) { method -> hasAnnotation(method, "JsonCreator") }
     else { method -> method.isConstructor })
@@ -163,7 +167,7 @@ fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> =
  * Find a constructor in the class by the name `className`, assuming there's
  * only one constructor used
  */
-fun findConstructor(cls: PsiClass): PsiMethod? = allYAMLConstructors(cls).firstOrNull()
+fun findConstructor(cls: UClass): UMethod? = allYAMLConstructors(cls).firstOrNull()
 
 /**
  * Return the Java class that the key constructs
@@ -171,13 +175,15 @@ fun findConstructor(cls: PsiClass): PsiMethod? = allYAMLConstructors(cls).firstO
  * type of the parameter of the parent with the same
  * name
  */
-fun classOf(keyValue: YAMLKeyValue): PsiClass? =
+fun classOf(keyValue: YAMLKeyValue): UClass? =
   if (isQualifiedConstructorCall(keyValue)) {
     resolveToClass(keyValue)
   } else {
-    typeOf(keyValue)?.let(::psiTypeToClass)
+    utypeOf(keyValue)?.let(::typeToClass)
+//    typeOf(keyValue)?.let(::psiTypeToClass)?.toUClass()
   }
 
+//TODO use UTypeReference or smth
 /**
  * Return the Java class that the key constructs
  * If the class is not explicitly stated, uses the
@@ -191,7 +197,7 @@ fun typeOf(keyValue: YAMLKeyValue): PsiType? =
     when (val greatGrandParent = keyValue.parent?.parent?.parent) {
       is YAMLSequence ->
         typeOfItems(greatGrandParent)?.let { outer ->
-          psiTypeToClass(outer)?.let {
+          psiTypeToClass(outer)?.toUClass()?.let {
             resolveToParameter(
               keyValue,
               it
@@ -200,6 +206,8 @@ fun typeOf(keyValue: YAMLKeyValue): PsiType? =
         }
       else -> resolveToParameter(keyValue)?.type
     }
+
+fun utypeOf(keyValue: YAMLKeyValue): UTypeReferenceExpression? = TODO()
 
 /**
  * TODO work on this
@@ -236,16 +244,16 @@ fun typeOf(keyValue: YAMLKeyValue): PsiType? =
 /**
  * Helpful method to find a class by name
  */
-fun resolveToClass(className: String, project: Project): PsiClass? =
+fun resolveToClass(className: String, project: Project): UClass? =
   JavaPsiFacade.getInstance(project).findClass(
     className,
     GlobalSearchScope.allScope(project)
-  )
+  )?.toUClass()
 
 /**
  * Get the class whose constructor this is an argument to.
  */
-fun getUpperClass(arg: YAMLKeyValue): PsiClass? {
+fun getUpperClass(arg: YAMLKeyValue): UClass? {
   val upperCtor = getUpperConstructorCall(arg)
   return if (upperCtor == null) {
     robotClass(arg.project)
@@ -261,7 +269,7 @@ fun getUpperClass(arg: YAMLKeyValue): PsiClass? {
  *         '@id' if the name hasn't been set or if it's a WPI
  *         class (identified by package name), and the custom id otherwise.
  */
-fun getIdName(cls: PsiClass): String? =
+fun getIdName(cls: UClass): String? =
   cls.annotations.find { annot ->
     annot.qualifiedName?.endsWith("JsonIdentityInfo") ?: false
   }?.let { idAnnot ->

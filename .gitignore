@@ -1,5 +1,11 @@
+/.gradle/
+/.idea/
+/.settings/
+/bin/
 /build/*
-/.idea
-/.gradle/5.2.1/executionHistory
+/gradle/wrapper/gradle-wrapper.jar
 
 !build/libs/
+
+.classpath
+.project
