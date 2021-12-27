@@ -33,22 +33,10 @@ intellij {
     instrumentCode = false
 }
 
-compileKotlin {
-    kotlinOptions.jvmTarget = "11"
-}
+compileKotlin.kotlinOptions.jvmTarget = "11"
 
-compileTestKotlin {
-    kotlinOptions.jvmTarget = "11"
-}
+compileTestKotlin.kotlinOptions.jvmTarget = "11"
 
 patchPluginXml {
   sinceBuild = "211.6693.111"
 }
-
-buildPlugin {
-  distributionFile 'YamlPlugin.jar'
-}
-
-distributionFile 'YamlPlugin.jar'
-
-version pluginVersion
