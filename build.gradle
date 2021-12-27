@@ -5,10 +5,10 @@ plugins {
 }
 
 def ideaVersion = '2021.2.2'
-def pluginVersion = '0.5.0a'
+def pluginVersion = '1'
 
 group 'edu.team449'
-version ("$pluginVersion-$ideaVersion")
+version pluginVersion
 
 sourceCompatibility = 11
 
