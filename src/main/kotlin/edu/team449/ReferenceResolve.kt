@@ -22,11 +22,13 @@ object RobotStuff {
   private var robotClasses: MutableMap<Project, PsiClass> = mutableMapOf()
   private var robotCtors: MutableMap<Project, PsiMethod> = mutableMapOf()
 
-  fun robotClass(project: Project): PsiClass =
-    robotClasses.getOrPut(project) { resolveToClass(ROBOT_MAP_QUALIFIED_NAME, project)!! }
+  fun robotClass(project: Project): PsiClass? =
+    if (project in robotClasses) robotClasses[project]
+    else resolveToClass(ROBOT_MAP_QUALIFIED_NAME, project)?.let { robotClasses.put(project, it) }
 
-  fun robotConstructor(project: Project): PsiMethod =
-    robotCtors.getOrPut(project) { findConstructor(robotClass(project))!! }
+  fun robotConstructor(project: Project): PsiMethod? =
+    if (project in robotCtors) robotCtors[project]
+    else robotClass(project)?.let(::findConstructor)?.let { robotCtors.put(project, it) }
 }
 
 /**
@@ -80,7 +82,7 @@ fun isIdArg(arg: YAMLKeyValue, idName: String): Boolean =
  * Find the class whose constructor/JsonCreator is being called
  */
 fun resolveToClass(constructorCall: YAMLKeyValue): PsiClass? =
-  getRealKeyText(constructorCall).let { resolveToClass(it, constructorCall.project) }
+  getRealKeyText(constructorCall)?.let { resolveToClass(it, constructorCall.project) }
 
 /**
  * If the input is an alias, it keeps trying to find the
@@ -90,12 +92,10 @@ fun getRealValue(element: PsiElement): PsiElement? =
   if (element is YAMLAliasImpl) anchorValue(element)?.let(::getRealValue)
   else element
 
-fun getRealKeyText(element: YAMLKeyValue): String =
+fun getRealKeyText(element: YAMLKeyValue): String? =
   when (val key = getRealValue(element.key!!)) {
     is YAMLKeyValue -> key.keyText
-    else -> key?.text ?: run {
-      TODO("real value for ${element.keyText} is null. uh oh")
-    }
+    else -> key?.text
   }
 
 fun resolveToParameter(arg: YAMLKeyValue): PsiParameter? {
@@ -124,11 +124,30 @@ fun getTheClassWhoseCtorThisIsAnArgTo(arg: YAMLKeyValue): PsiClass? {
     }
 }
 
-fun resolveToParameter(arg: YAMLKeyValue, clazz: PsiClass): PsiParameter? {
+/**
+ * Whether or not a parameter exists. Works with WPI classes.
+ * @param arg The parameter name-argument pair in YAML
+ * @param clazz The Java class to which this is an argument
+ */
+fun existsParameter(arg: YAMLKeyValue, clazz: PsiClass): Boolean =
   //Make sure it's not an alias, resolve to the real value
-  val argName = getRealKeyText(arg)
-  return findConstructor(clazz)?.let { findParam(it, argName) }
-}
+  getRealKeyText(arg)?.let { argName ->
+    if (clazz.qualifiedName !in wpiCtors)
+      findConstructor(clazz)?.let { findParam(it, argName) } != null
+    else
+      wpiCtors[clazz.qualifiedName]?.let {
+        it.keys.any { paramName -> stripQMark(paramName) == argName }
+      }
+  } ?: false
+
+/**
+ * Resolve to a parameter in a Java method. Does not work with WPI classes
+ */
+fun resolveToParameter(arg: YAMLKeyValue, clazz: PsiClass): PsiParameter? =
+  //Make sure it's not an alias, resolve to the real value
+  getRealKeyText(arg)?.let { argName ->
+    findConstructor(clazz)?.let { findParam(it, argName) }
+  }
 
 fun typeOfItems(seq: YAMLSequence): PsiType? =
   when (val arg = seq.parent) {
@@ -150,20 +169,14 @@ fun typeOfItems(seq: YAMLSequence): PsiType? =
   }
 
 /**
- * Find ALL the constructors in the given class usable by
+ * Find a constructor in the given class usable by
  * YAML files (whether they're actual constructors or methods
  * annotated with `JsonCreator`)
  */
-fun allYAMLConstructors(cls: PsiClass): List<PsiMethod> =
-  cls.methods.filter(
+fun findConstructor(cls: PsiClass): PsiMethod? =
+  cls.methods.find(
     if (needsJsonAnnot(cls)) { method -> hasAnnotation(method, "JsonCreator") }
     else { method -> method.isConstructor })
-
-/**
- * Find a constructor in the class by the name `className`, assuming there's
- * only one constructor used
- */
-fun findConstructor(cls: PsiClass): PsiMethod? = allYAMLConstructors(cls).firstOrNull()
 
 /**
  * Return the Java class that the key constructs

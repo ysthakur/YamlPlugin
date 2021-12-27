@@ -68,11 +68,23 @@ fun hasAnnotation(method: PsiMethod, annotName: String) = findAnnotation(method,
  *  key: val
  */
 fun isQualifiedConstructorCall(constructorCall: YAMLKeyValue): Boolean =
-  getRealKeyText(constructorCall).let { incompleteCodeFormatted(it).matches(classNameRegex) }
+  getRealKeyText(constructorCall)
+    ?.let { incompleteCodeFormatted(it).matches(classNameRegex) }
+    ?: false
 
-fun incompleteCodeFormatted(text: String) = text.replace(ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS, "")
+fun incompleteCodeFormatted(text: String) =
+  text.replace(ANNOYING_AND_NON_USEFUL_DUMMY_CODE_BY_JETBRAINS, "")
 
-fun String.afterDot() = Regex("""\.[^.]*$""").find(this)?.value?.removePrefix(".") ?: this
+fun String.afterDot() =
+  Regex("""\.[^.]*$""").find(this)?.value?.removePrefix(".")
+    ?: this
+
+/**
+ * Strip a question mark from the end of a string if it has one
+ */
+fun stripQMark(str: String): String =
+  if (str[str.length - 1] == '?') str.substring(0, str.length - 1)
+  else str
 
 /**
  * Whether or not the constructor that Jackson calls needs
@@ -81,7 +93,7 @@ fun String.afterDot() = Regex("""\.[^.]*$""").find(this)?.value?.removePrefix(".
  * TODO this is a terrible solution, fix this
  */
 fun needsJsonAnnot(cls: PsiClass): Boolean =
-  true //!(cls.qualifiedName?.let(::isWPIClass) ?: true)
+  !(cls.qualifiedName?.let(::isWPIClass) ?: true)
 
 fun isWPIClass(className: String) = className.startsWith(wpiPackage)
 
@@ -99,11 +111,17 @@ fun getAndNeedsId(cls: PsiClass): Pair<String?, Boolean> =
 //TODO work on this
 fun isTopLevel(keyVal: YAMLKeyValue): Boolean = keyVal.parent?.parent is YAMLDocument
 
+/**
+ * Required parameter names for the constructor of the given class
+ */
 fun ctorParamNames(cls: PsiClass): List<String>? =
-  findConstructor(cls)
-    ?.let { ctor -> ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name } }
-    ?: (if (cls.qualifiedName?.let(::isWPIClass) == true) wpiCtors[cls.qualifiedName!!]?.map { it.first } ?: emptyList()
-    else null)
+  if (cls.qualifiedName in wpiCtors) {
+    wpiCtors[cls.qualifiedName]?.keys?.toList()?.filter { !it.endsWith("?") }
+  } else {
+    findConstructor(cls)?.let { ctor ->
+      ctor.parameterList.parameters.filter(::isRequiredParam).map { it.name }
+    }
+  }
 
 /**
  * Get the constructor call that this is an argument to, but if

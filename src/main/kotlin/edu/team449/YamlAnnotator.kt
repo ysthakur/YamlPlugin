@@ -116,8 +116,11 @@ class YamlAnnotator : Annotator {
     if (argName != "<<") {
       val upperClass = getTheClassWhoseCtorThisIsAnArgTo(arg)
       if (upperClass != null) {
-        if (resolveToParameter(arg, upperClass) == null) {
-          val idName = getIdName(getUpperConstructorCall(arg)?.let(::classOf) ?: RobotStuff.robotClass(arg.project))
+        if (!existsParameter(arg, upperClass)) {
+          val ctorClass =
+            getUpperConstructorCall(arg)?.let(::classOf)
+              ?: RobotStuff.robotClass(arg.project)
+          val idName = ctorClass?.let(::getIdName)
           //If it's not one of the parameters, and it's not the id, mark a warning
           if (idName != argName) {
             //TODO should this be an error?

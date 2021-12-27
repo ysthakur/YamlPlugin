@@ -37,9 +37,12 @@ class ConstructorRef(private val ctor: YAMLKeyValue) : PsiPolyVariantReferenceBa
    */
   override fun multiResolve(incompleteCode: Boolean): Array<ResolveResult> {
     val cls = resolveToClass(ctor) ?: return emptyArray()
-    return (allYAMLConstructors(cls) + cls)
-      .map(::PsiElementResolveResult)
-      .toTypedArray()
+    val ctor = findConstructor(cls)
+    if (ctor == null) {
+      return arrayOf(PsiElementResolveResult(cls))
+    } else {
+      return arrayOf(PsiElementResolveResult(cls), PsiElementResolveResult(ctor))
+    }
   }
 }
 

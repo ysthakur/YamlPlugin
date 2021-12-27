@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'org.jetbrains.intellij' version '1.1.6'
-    id 'org.jetbrains.kotlin.jvm' version '1.5.0'
+    id 'org.jetbrains.kotlin.jvm' version '1.5.30'
 }
 
 def ideaVersion = '2021.2.2'
@@ -22,7 +22,7 @@ dependencies {
 }
 
 wrapper {
-    gradleVersion = '7.1'
+    gradleVersion = '7.3'
     distributionType = Wrapper.DistributionType.ALL
 }
 
@@ -43,5 +43,4 @@ compileTestKotlin {
 
 patchPluginXml {
   sinceBuild = "211.6693.111"
-  untilBuild = "212.5284.*"
 }
