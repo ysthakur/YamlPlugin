@@ -45,4 +45,10 @@ patchPluginXml {
   sinceBuild = "211.6693.111"
 }
 
+buildPlugin {
+  distributionFile 'YamlPlugin.jar'
+}
+
+distributionFile 'YamlPlugin.jar'
+
 version pluginVersion
